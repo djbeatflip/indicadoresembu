@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, RefreshCw, Check } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
 // --- IMPORTAÇÕES DO FIREBASE ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
@@ -20,13 +20,12 @@ const firebaseConfig = {
   measurementId: "G-E1GWDGC1R2"
 };
 
-// Inicializa o Firebase
-const app = initializeApp(firebaseConfig);
+// Inicialização Segura do Firebase (Evita o "Crash" por Duplicidade)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const secondaryApp = getApps().find(a => a.name === "Secondary") || initializeApp(firebaseConfig, "Secondary");
+
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// App secundário para cadastrar novos usuários sem deslogar o Administrador atual
-const secondaryApp = initializeApp(firebaseConfig, "Secondary");
 const secondaryAuth = getAuth(secondaryApp);
 
 // --- TIPAGENS ---
@@ -82,10 +81,14 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState('dashboard');
   
+  // ESTADO PARA RECOLHER/EXPANDIR O MENU LATERAL
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
   const [files, setFiles] = useState<ImportedFile[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
   const [sysTheme, setSysTheme] = useState('blue');
 
+  // Monitora o Estado de Login via Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -139,39 +142,100 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20">
-        <div className={`p-5 ${bgClass} bg-opacity-90 flex items-center space-x-3 border-b border-slate-800`}>
-          <div className="bg-white/20 p-2 rounded-lg"><BarChart2 className="h-6 w-6 text-white" /></div>
-          <div><h1 className="font-bold text-white leading-tight">SIAPS Nuvem</h1><p className="text-[10px] text-white/80 uppercase tracking-wider">Embu das Artes</p></div>
+    <div className="min-h-screen bg-slate-50 flex overflow-hidden">
+      
+      {/* MENU LATERAL (COM TRANSIÇÃO E LARGURA DINÂMICA) */}
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20 transition-all duration-300 ease-in-out shrink-0`}>
+        
+        {/* CABEÇALHO DO MENU */}
+        <div className={`p-4 ${bgClass} bg-opacity-90 flex items-center h-20 border-b border-slate-800 transition-all ${isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+          {isSidebarOpen ? (
+            <>
+              <div className="flex items-center space-x-3 overflow-hidden">
+                <div className="bg-white/20 p-2 rounded-lg shrink-0"><BarChart2 className="h-6 w-6 text-white" /></div>
+                <div className="truncate">
+                  <h1 className="font-bold text-white leading-tight truncate">Indicadores APS</h1>
+                  <p className="text-[10px] text-white/80 uppercase tracking-wider truncate">Embu das Artes</p>
+                </div>
+              </div>
+              <button onClick={() => setIsSidebarOpen(false)} className="text-white/70 hover:text-white shrink-0 bg-black/10 p-1.5 rounded-lg hover:bg-black/20 transition-colors" title="Recolher Menu">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setIsSidebarOpen(true)} className="text-white hover:text-white shrink-0 p-2 bg-white/20 rounded-lg shadow-sm transition-colors" title="Expandir Menu">
+              <Menu className="h-6 w-6" />
+            </button>
+          )}
         </div>
         
-        <div className="p-4 flex-1 space-y-1.5 overflow-y-auto">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Módulos</p>
-          <button onClick={() => setActiveModule('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'dashboard' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`}><Layout className="h-5 w-5" /><span>Dashboard SIAPS</span></button>
+        {/* ITENS DO MENU */}
+        <div className="p-4 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-thin">
+          {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Módulos</p>}
+          
+          <button onClick={() => setActiveModule('dashboard')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'dashboard' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Dashboard SIAPS" : ""}>
+            <Layout className="h-5 w-5 shrink-0" />
+            {isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
+          </button>
           
           {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
-            <button onClick={() => setActiveModule('import')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud className="h-5 w-5" /><span>Importar Dados</span></button>
+            <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
+              <UploadCloud className="h-5 w-5 shrink-0" />
+              {isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
+            </button>
           )}
 
           {(currentUser.role === 'Administrador') && (
             <>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p>
-              <button onClick={() => setActiveModule('users')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'users' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`}><Users className="h-5 w-5" /><span>Usuários</span></button>
-              <button onClick={() => setActiveModule('access')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'access' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`}><Shield className="h-5 w-5" /><span>Acessos</span></button>
-              <button onClick={() => setActiveModule('settings')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'settings' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`}><Settings className="h-5 w-5" /><span>Configurações</span></button>
+              {isSidebarOpen ? (
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p>
+              ) : (
+                 <div className="h-px bg-slate-800 my-4 mx-2"></div>
+              )}
+              
+              <button onClick={() => setActiveModule('users')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'users' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Usuários" : ""}>
+                <Users className="h-5 w-5 shrink-0" />
+                {isSidebarOpen && <span className="whitespace-nowrap">Usuários</span>}
+              </button>
+              <button onClick={() => setActiveModule('access')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'access' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Acessos" : ""}>
+                <Shield className="h-5 w-5 shrink-0" />
+                {isSidebarOpen && <span className="whitespace-nowrap">Acessos</span>}
+              </button>
+              <button onClick={() => setActiveModule('settings')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'settings' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Configurações" : ""}>
+                <Settings className="h-5 w-5 shrink-0" />
+                {isSidebarOpen && <span className="whitespace-nowrap">Configurações</span>}
+              </button>
             </>
           )}
         </div>
 
+        {/* RODAPÉ DO MENU (USUÁRIO E SAIR) */}
         <div className="p-4 border-t border-slate-800 bg-slate-950">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className={`h-8 w-8 rounded-full ${bgClass} flex items-center justify-center text-white font-bold text-xs`}>{currentUser.name.charAt(0)}</div>
-              <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p><p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p></div>
+          {isSidebarOpen ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3 overflow-hidden">
+                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>
+                  {currentUser.name.charAt(0)}
+                </div>
+                <div className="truncate w-28">
+                  <p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p>
+                </div>
+              </div>
+              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema">
+                <LogOut className="h-4 w-4 shrink-0" />
+              </button>
             </div>
-            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400" title="Sair do Sistema"><LogOut className="h-4 w-4" /></button>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center space-y-4">
+              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>
+                {currentUser.name.charAt(0)}
+              </div>
+              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema">
+                <LogOut className="h-4 w-4 shrink-0" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -187,11 +251,13 @@ export default function App() {
 }
 
 // ==========================================
-// TELA DE LOGIN & CADASTRO INICIAL
+// TELA DE LOGIN & RECUPERAÇÃO DE SENHA
 // ==========================================
 function LoginScreen({ bgClass }: any) {
   const [isRegister, setIsRegister] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,32 +283,78 @@ function LoginScreen({ bgClass }: any) {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+    const frm = e.target as any;
+    const email = frm.email.value;
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccessMsg('E-mail de recuperação enviado! Verifique a sua caixa de entrada e spam.');
+      setTimeout(() => { setIsForgot(false); setSuccessMsg(''); }, 5000);
+    } catch (err: any) {
+      setErrorMsg(err.message.includes('user-not-found') ? 'Este e-mail não está cadastrado.' : 'Erro ao tentar recuperar a senha.');
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
       <div className="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-slate-200">
         <div className="flex justify-center mb-6"><div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}><Shield className={`h-10 w-10 text-slate-800`} /></div></div>
-        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">SIAPS Nuvem</h2>
-        <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">Indicadores APS<br/><span className="text-lg font-medium text-slate-500">Embu das Artes</span></h2>
         
-        {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
+        {isForgot ? (
+          <>
+            <p className="text-center text-slate-500 text-sm mb-6">Recuperar Palavra-passe</p>
+            {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
+            {successMsg && <div className="bg-emerald-50 text-emerald-600 p-3 rounded-lg text-xs mb-4 text-center border border-emerald-200">{successMsg}</div>}
+            
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail Cadastrado</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
+              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
+                Enviar link de recuperação
+              </button>
+            </form>
+            
+            <div className="mt-6 text-center">
+              <button onClick={() => {setIsForgot(false); setErrorMsg(''); setSuccessMsg('');}} className="text-xs text-slate-500 hover:underline">
+                Voltar ao Login
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
+            
+            {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isRegister && (
-            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-          )}
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Senha (Mín. 6 caracteres)</label><input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-          
-          <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
-            {isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}
-          </button>
-        </form>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {isRegister && (
+                <div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
+              )}
+              <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-semibold text-slate-600">Senha (Mín. 6)</label>
+                  {!isRegister && <button type="button" onClick={() => {setIsForgot(true); setErrorMsg('');}} className="text-[10px] text-blue-600 hover:underline">Esqueceu?</button>}
+                </div>
+                <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
+              </div>
+              
+              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
+                {isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}
+              </button>
+            </form>
 
-        <div className="mt-6 text-center">
-          <button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">
-            {isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}
-          </button>
-        </div>
+            <div className="mt-6 text-center">
+              <button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">
+                {isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -295,7 +407,7 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
         
         setProgressMsg(`Salvando ${file.name} na Nuvem...`);
         try {
-          const batch = writeBatch(db);
+          let batch = writeBatch(db);
           let opCount = 0;
           
           for (let i = 0; i < enrichedData.length; i++) {
@@ -307,11 +419,12 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
              
              if (opCount >= 400 || i === enrichedData.length - 1) {
                 await batch.commit();
+                batch = writeBatch(db);
                 opCount = 0;
              }
           }
         } catch (err: any) {
-           console.error("Erro ao salvar:", err);
+           console.error("Erro ao salvar arquivo:", err);
            alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`);
         }
       }
@@ -337,21 +450,22 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
     
     try {
       const qs = await getDocs(collection(db, 'dados_siaps'));
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
       let opCount = 0;
       
-      for(let i=0; i<qs.docs.length; i++) {
+      for(let i = 0; i < qs.docs.length; i++) {
          batch.delete(qs.docs[i].ref);
          opCount++;
          if(opCount >= 400 || i === qs.docs.length - 1) {
             await batch.commit();
+            batch = writeBatch(db);
             opCount = 0;
          }
       }
       setFiles([]);
     } catch(e) {
       console.error(e);
-      alert('Erro ao apagar.');
+      alert('Erro ao apagar. Verifique regras do Firestore.');
     }
     
     setIsProcessing(false);
@@ -363,7 +477,7 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
       <div className={`p-10 rounded-2xl border-2 border-dashed text-center bg-white ${isProcessing ? 'border-slate-300 opacity-50' : 'border-slate-300 hover:border-slate-400'}`}>
         <div className={`mx-auto w-16 h-16 ${bgClass} bg-opacity-10 rounded-full flex items-center justify-center mb-4`}><UploadCloud className={`h-8 w-8 text-slate-700`} /></div>
         <h3 className="font-bold text-xl text-slate-800">Conexão de Dados na Nuvem</h3>
-        <p className="text-slate-500 mb-6 mt-2 max-w-lg mx-auto">Selecione as planilhas do SIAPS. O sistema vai fatiar as planilhas e enviar para o banco de dados Firebase.</p>
+        <p className="text-slate-500 mb-6 mt-2 max-w-lg mx-auto">Selecione as planilhas do SIAPS do seu computador. O sistema vai fatiar as planilhas e enviar para o banco de dados Firebase.</p>
         
         {isProcessing && <p className="text-blue-600 font-bold mb-4 animate-pulse">{progressMsg}</p>}
 
@@ -449,8 +563,8 @@ function ModuleAccess({ bgClass }: any) {
       <h2 className="text-lg font-bold flex items-center mb-6"><Shield className="mr-2 h-5 w-5 text-blue-600"/> Tabela de Permissões</h2>
       <div className="space-y-4">
         <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-red-700">Administrador</h3><p className="text-slate-600 text-sm">Acesso total. Gestão de usuários, layout, importação e Dashboard.</p></div>
-        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-amber-700">Coordenador</h3><p className="text-slate-600 text-sm">Importação de relatórios para a nuvem e visualização do Dashboard.</p></div>
-        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-emerald-700">Leitor</h3><p className="text-slate-600 text-sm">Visualização exclusiva do Dashboard.</p></div>
+        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-amber-700">Coordenador</h3><p className="text-slate-600 text-sm">Apenas importação de relatórios para a nuvem e visualização do Dashboard.</p></div>
+        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-emerald-700">Leitor</h3><p className="text-slate-600 text-sm">Visualização exclusiva do Dashboard. Não pode editar nem enviar arquivos.</p></div>
       </div>
     </div>
   );
@@ -480,8 +594,7 @@ function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
 // SUB-MÓDULO: DASHBOARD SIAPS (O VISUAL)
 // ==========================================
 function ModuleDashboard({ files, bgClass }: any) {
-  // --- DECLARAÇÃO SEGURA DE TODOS OS HOOKS ANTES DOS RETORNOS ---
-  
+  // DECLARA TODOS OS HOOKS AQUI EM CIMA PARA O REACT NÃO TRAVAR
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => !c.startsWith('_') && !c.toUpperCase().includes('EMPTY') && c.trim() !== ''), [rawAllData]);
 
@@ -658,15 +771,6 @@ function ModuleDashboard({ files, bgClass }: any) {
     return sortableData;
   }, [tableMode, consolidatedTeams, filteredData, sortConfig]);
 
-  // --- RETORNO PARA ECRÃ VAZIO (AGORA SEGURO, APÓS OS HOOKS) ---
-  if (files.length === 0) return (
-    <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
-      <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
-      <h2 className="text-xl font-medium text-slate-600">Nenhum dado hospedado no Firebase.</h2>
-      <p className="mt-2 text-sm">O Administrador precisa importar os arquivos pelo módulo "Importar Dados".</p>
-    </div>
-  );
-
   const optM = Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99));
   const optU = Array.from(new Set(allData.map(d => String(d._ubsLabel || '')))).filter(Boolean).sort();
   const optE = Array.from(new Set(allData.filter(d => !selectedUnidade || d._ubsLabel === selectedUnidade).map(d => String(d._teamLabel || '')))).filter(Boolean).sort();
@@ -710,6 +814,22 @@ function ModuleDashboard({ files, bgClass }: any) {
 
   const summaryVariablesMap: Record<string, string> = {};
   variablesChartData.forEach(v => summaryVariablesMap[v.fullName] = formatVal(v.valor));
+
+  const statusPieData = [
+    { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
+    { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
+    { name: 'Suficiente', total: statusCounts['Suficiente'], color: '#F59E0B' },
+    { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
+  ].filter(d => d.total > 0);
+
+  // --- TRAVA DE SEGURANÇA: SE NÃO HOUVER ARQUIVOS, MOSTRA ECRÃ VAZIO ---
+  if (files.length === 0) return (
+    <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
+      <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
+      <h2 className="text-xl font-medium text-slate-600">Nenhum dado hospedado no Firebase.</h2>
+      <p className="mt-2 text-sm">Vá ao módulo "Importar Dados" no menu lateral para iniciar.</p>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -755,7 +875,7 @@ function ModuleDashboard({ files, bgClass }: any) {
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
           <h3 className="text-base font-bold text-slate-800 mb-1">{isSingleTeam ? 'Valores Reais' : 'Média das Equipes'}</h3>
           <div style={{ height: 290 }}>
-            <ResponsiveContainer><BarChart data={variablesChartData} margin={{ top: 25, right: 15, left: -10, bottom: 55 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} angle={-30} textAnchor="end" interval={0} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName]} /><Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={48}>{variablesChartData.map((e, i) => <Cell key={i} fill={e.fullName === activeVariable ? '#1D4ED8' : CHART_COLORS[i % CHART_COLORS.length]} />)}<LabelList dataKey="valor" position="top" fontSize={11} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Bar></BarChart></ResponsiveContainer>
+            <ResponsiveContainer><BarChart data={variablesChartData} margin={{ top: 25, right: 15, left: -10, bottom: 55 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} angle={-30} textAnchor="end" interval={0} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName]} /><Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={48}>{variablesChartData.map((e, i) => <Cell key={i} fill={e.fullName === activeVariable ? '#1D4ED8' : C_COLORS[i % C_COLORS.length]} />)}<LabelList dataKey="valor" position="top" fontSize={11} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Bar></BarChart></ResponsiveContainer>
           </div>
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
