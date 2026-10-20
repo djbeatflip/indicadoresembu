@@ -34,16 +34,53 @@ interface User { id: string; email: string; role: string; name: string; }
 
 // --- UTILITÁRIOS MATEMÁTICOS & PADRONIZAÇÃO ---
 const monthOrder: Record<string, number> = { 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6, 'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12 };
-const S_COLORS: Record<string, string> = { 'Ótimo': '#3B82F6', 'Bom': '#10B981', 'Suficiente': '#F59E0B', 'Regular': '#EF4444' };
-const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Suficiente': 2, 'Bom': 3, 'Ótimo': 4 };
-const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Suficiente', 3: 'Bom', 4: 'Ótimo' };
+const S_COLORS: Record<string, string> = { 'Ótimo': '#3B82F6', 'Bom': '#10B981', 'Satisfatório': '#F59E0B', 'Regular': '#EF4444' };
+const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Satisfatório': 2, 'Bom': 3, 'Ótimo': 4 };
+const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Satisfatório', 3: 'Bom', 4: 'Ótimo' };
 const C_COLORS = ['#118DFF', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6', '#E66C37'];
 
 const parseNum = (v: any) => { if (typeof v === 'number' && !isNaN(v)) return v; if (typeof v !== 'string') return null; let s = v.trim().replace(/%/g, '').replace(/R\$/g, '').trim(); if (!s) return null; if (s.includes('.') && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); else if (s.includes(',')) s = s.replace(',', '.'); const n = Number(s); return isNaN(n) ? null : n; };
 const formatVal = (v: number) => Number.isInteger(v) ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 const normTxt = (v: any) => String(v || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 const normIne = (v: any) => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
-const normStat = (v: any): string | null => { const s = String(v || '').toLowerCase().trim(); if (!s) return null; if (s.includes('ótimo') || s.includes('otimo')) return 'Ótimo'; if (['bom', 'boa'].includes(s) || s.startsWith('bom ')) return 'Bom'; if (s === 'suficiente' || (s.includes('suficiente') && !s.includes('insuficiente'))) return 'Suficiente'; if (['regular', 'ruim', 'crítico', 'critico', 'insuficiente'].includes(s) || s.includes('regular')) return 'Regular'; return null; };
+
+// TRATAMENTO DE TEXTOS PARA STATUS (Caso venha escrito na planilha)
+const normStat = (v: any): string | null => { 
+  const s = String(v || '').toLowerCase().trim(); 
+  if (!s) return null; 
+  if (s.includes('ótimo') || s.includes('otimo')) return 'Ótimo'; 
+  if (['bom', 'boa'].includes(s) || s.startsWith('bom ')) return 'Bom'; 
+  if (s === 'satisfatório' || s.includes('satisfat') || s === 'suficiente' || (s.includes('suficiente') && !s.includes('insuficiente'))) return 'Satisfatório'; 
+  if (['regular', 'ruim', 'crítico', 'critico', 'insuficiente'].includes(s) || s.includes('regular')) return 'Regular'; 
+  return null; 
+};
+
+// CÁLCULO INTELIGENTE DAS NOTAS POR INDICADOR
+const calcStatus = (v: number | null, ind: string): string | null => {
+  if (v === null) return null;
+  const i = String(ind || '').toLowerCase();
+  
+  if (i.includes('vinculo') || i.includes('vínculo')) {
+    if (v < 5) return 'Regular';
+    if (v < 7) return 'Satisfatório';
+    if (v <= 8.5) return 'Bom';
+    return 'Ótimo';
+  }
+  
+  if (i.includes('c1')) {
+    if (v <= 10 || v > 70) return 'Regular';
+    if (v <= 30) return 'Satisfatório';
+    if (v <= 50) return 'Bom';
+    return 'Ótimo';
+  }
+  
+  // Regra Padrão para C2, C3, C4, C5, C6 e C7
+  if (v <= 25) return 'Regular';
+  if (v <= 50) return 'Satisfatório';
+  if (v <= 75) return 'Bom';
+  return 'Ótimo';
+};
+
 const extMes = (f: string) => { const u = f.toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return f.split('-')[0].replace(/[0-9]/g, '').trim() || f; };
 const extInd = (f: string) => f.split('-').length > 1 ? f.split('-').slice(1).join('-').trim() : f.trim();
 
@@ -540,7 +577,6 @@ function ModuleDashboard({ files, bgClass }: any) {
         if (n && (n.length <= 4 || n.toLowerCase() === 'equipe' || n.toLowerCase() === 'esf' || n.toLowerCase() === 'eap') && ic) n = `${n} (INE ${ic})`;
         
         let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
-
         const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
         
         const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
@@ -659,7 +695,7 @@ function ModuleDashboard({ files, bgClass }: any) {
         if (!st) for (let i = columns.length - 1; i >= 0; i--) if ((st = normStat(r[columns[i]]))) break;
         if (!st && activeVariable) {
           const v = parseNum(r[activeVariable]);
-          if (v !== null) { const pct = v <= 10 && v > 0 ? v * 10 : v; st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular'; }
+          st = calcStatus(v, r._mappedIndicator);
         }
         if (st) { weightSum += S_WEIGHTS[st]; weightCount++; } 
       });
@@ -704,7 +740,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   const optU = Array.from(new Set(allData.map(d => String(d._ubsLabel || '')))).filter(Boolean).sort();
   const optE = Array.from(new Set(allData.filter(d => !selectedUnidade || d._ubsLabel === selectedUnidade).map(d => String(d._teamLabel || '')))).filter(Boolean).sort();
 
-  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Suficiente': 0, 'Regular': 0 };
+  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
 
   const variablesChartData = variableColumns.map(col => {
@@ -746,7 +782,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   const statusPieData = [
     { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
     { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
-    { name: 'Suficiente', total: statusCounts['Suficiente'], color: '#F59E0B' },
+    { name: 'Satisfatório', total: statusCounts['Satisfatório'], color: '#F59E0B' },
     { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
   ].filter(d => d.total > 0);
 
@@ -787,7 +823,7 @@ function ModuleDashboard({ files, bgClass }: any) {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3"><div className="bg-slate-100 p-2.5 rounded-full shrink-0"><Users className="h-5 w-5 text-slate-700" /></div><div><p className="text-xs text-slate-700 font-semibold uppercase">Equipes</p><p className="text-xl font-bold text-slate-800">{totalEquipesUnicas}</p></div></div>
         <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm flex items-center space-x-3"><div className="bg-blue-100 p-2.5 rounded-full shrink-0"><Award className="h-5 w-5 text-blue-600" /></div><div><p className="text-xs text-blue-700 font-semibold uppercase">Ótimo</p><p className="text-xl font-bold text-blue-600">{statusCounts['Ótimo']}</p></div></div>
         <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center space-x-3"><div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3"><div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div><div><p className="text-xs text-amber-700 font-semibold uppercase">Suficiente</p><p className="text-xl font-bold text-amber-600">{statusCounts['Suficiente']}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3"><div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div><div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div></div>
         <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1"><div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div><div><p className="text-xs text-red-700 font-semibold uppercase">Regular</p><p className="text-xl font-bold text-red-600">{statusCounts['Regular']}</p></div></div>
       </section>
 
@@ -866,7 +902,7 @@ function ModuleDashboard({ files, bgClass }: any) {
                   {columns.map(c => {
                     let st = null;
                     if (c.toLowerCase().includes('classifica') || c.toLowerCase().includes('conceito') || c.toLowerCase().includes('qualidade') || c.toLowerCase().includes('status')) { st = normStat(r[c]); }
-                    if (!st && c === activeVariable) { const v = parseNum(r[c]); if (v !== null) { const pct = v <= 10 && v > 0 ? v * 10 : v; st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular'; } }
+                    if (!st && c === activeVariable) { const v = parseNum(r[c]); st = calcStatus(v, r._mappedIndicator); }
                     return <td key={c} className={`px-3 py-2 text-slate-600 ${c === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{String(r[c])}</span> : String(r[c] ?? '')}</td>;
                   })}
                 </tr>
