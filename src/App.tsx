@@ -44,7 +44,6 @@ const formatVal = (v: number) => Number.isInteger(v) ? v.toLocaleString('pt-BR')
 const normTxt = (v: any) => String(v || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 const normIne = (v: any) => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
 
-// TRATAMENTO DE TEXTOS PARA STATUS (Caso venha escrito na planilha)
 const normStat = (v: any): string | null => { 
   const s = String(v || '').toLowerCase().trim(); 
   if (!s) return null; 
@@ -55,26 +54,21 @@ const normStat = (v: any): string | null => {
   return null; 
 };
 
-// CÁLCULO INTELIGENTE DAS NOTAS POR INDICADOR
 const calcStatus = (v: number | null, ind: string): string | null => {
   if (v === null) return null;
   const i = String(ind || '').toLowerCase();
-  
   if (i.includes('vinculo') || i.includes('vínculo')) {
     if (v < 5) return 'Regular';
     if (v < 7) return 'Satisfatório';
     if (v <= 8.5) return 'Bom';
     return 'Ótimo';
   }
-  
   if (i.includes('c1')) {
     if (v <= 10 || v > 70) return 'Regular';
     if (v <= 30) return 'Satisfatório';
     if (v <= 50) return 'Bom';
     return 'Ótimo';
   }
-  
-  // Regra Padrão para C2, C3, C4, C5, C6 e C7
   if (v <= 25) return 'Regular';
   if (v <= 50) return 'Satisfatório';
   if (v <= 75) return 'Bom';
@@ -84,7 +78,6 @@ const calcStatus = (v: number | null, ind: string): string | null => {
 const extMes = (f: string) => { const u = f.toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return f.split('-')[0].replace(/[0-9]/g, '').trim() || f; };
 const extInd = (f: string) => f.split('-').length > 1 ? f.split('-').slice(1).join('-').trim() : f.trim();
 
-// PADRONIZADOR DE INDICADORES
 const mapIndicatorName = (name: string) => {
   const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if(n.includes('acesso')) return 'C1 - Mais Acesso';
@@ -98,7 +91,6 @@ const mapIndicatorName = (name: string) => {
   return name.toUpperCase();
 };
 
-// --- MOTOR DE LEITURA DE PLANILHAS (INTELIGENTE) ---
 const buildRows = (rows: any[][]) => {
   let hIdx = rows.findIndex(r => {
     const j = r.join(' ').toUpperCase();
@@ -537,16 +529,17 @@ function ModuleDashboard({ files, bgClass }: any) {
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => !c.startsWith('_') && !c.toUpperCase().includes('EMPTY') && c.trim() !== ''), [rawAllData]);
 
   const colUnidade = useMemo(() => {
-    const c = columns.slice(0, 12);
+    const blocks = ['tipo', 'nota'];
+    const c = columns.slice(0, 15).filter(col => !blocks.some(w => col.toLowerCase().includes(w)));
     return c.find(x => x.toLowerCase().includes('estabeleci')) || c.find(x => x.toLowerCase().includes('unidade')) || c.find(x => x.toLowerCase().includes('ubs')) || null;
   }, [columns]);
 
   const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(c.toLowerCase().trim()) || c.toLowerCase().endsWith(' ine')) || null, [columns]);
 
   const colEquipe = useMemo(() => {
-    const blocks = ['nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho'];
-    const candidates = columns.slice(0, 12).filter(c => c !== colUnidade && c !== colIne && !blocks.some(w => c.toLowerCase().includes(w)));
-    return candidates.find(c => c.toLowerCase().includes('nome da equipe')) || candidates.find(c => c.toLowerCase().includes('equipe') && !c.toLowerCase().includes('tipo')) || candidates.find(c => c.toLowerCase().includes('nome')) || candidates[0] || null;
+    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho'];
+    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && !blocks.some(w => c.toLowerCase().includes(w)));
+    return candidates.find(c => c.toLowerCase().includes('nome da equipe')) || candidates.find(c => c.toLowerCase().includes('equipe')) || candidates.find(c => c.toLowerCase().includes('nome')) || candidates[0] || null;
   }, [columns, colUnidade, colIne]);
 
   const colMes = '_mesOrigem';
@@ -572,13 +565,17 @@ function ModuleDashboard({ files, bgClass }: any) {
 
       sorted.forEach((r, idx) => {
         let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
-        n = n.replace(/\(\s*0*\d+\s*\)/g, '').trim();
-        const ic = colIne ? normIne(r[colIne]) : '';
-        if (n && (n.length <= 4 || n.toLowerCase() === 'equipe' || n.toLowerCase() === 'esf' || n.toLowerCase() === 'eap') && ic) n = `${n} (INE ${ic})`;
         
+        const ic = colIne ? normIne(r[colIne]) : '';
         let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
+        
         const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
         
+        let tipoStr = 'Outros';
+        const lblTest = lbl.toUpperCase();
+        if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
+        else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
+
         const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
         const mappedInd = mapIndicatorName(indOrig);
 
@@ -587,6 +584,7 @@ function ModuleDashboard({ files, bgClass }: any) {
           _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
           _teamLabel: lbl, 
           _ubsLabel: ubs,
+          _tipoEquipe: tipoStr,
           _mappedIndicator: mappedInd
         });
       });
@@ -595,6 +593,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [rawAllData, colUnidade, colEquipe, colIne, colIndicador]);
 
   const [selectedUnidade, setSelectedUnidade] = useState('');
+  const [selectedTipoEquipe, setSelectedTipoEquipe] = useState('');
   const [selectedEquipe, setSelectedEquipe] = useState('');
   const [selectedMes, setSelectedMes] = useState('');
   const [selectedIndicador, setSelectedIndicador] = useState('');
@@ -602,6 +601,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
 
+  const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
   const optI = useMemo(() => {
     return Array.from(new Set(allData.map(d => String(d._mappedIndicator || ''))))
       .filter(Boolean)
@@ -613,28 +613,44 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [allData]);
 
   useEffect(() => {
-    if (!selectedIndicador && optI.length > 0) {
-      setSelectedIndicador(optI[0]);
+    if (!selectedIndicador && optI.length > 0) setSelectedIndicador(optI[0]);
+    if (!selectedMes && optM.length > 0) {
+      const currentMonthNum = new Date().getMonth() + 1;
+      let closest = optM[optM.length - 1];
+      let minDiff = Infinity;
+      optM.forEach(m => {
+        const mNum = monthOrder[m];
+        if (mNum) {
+          const diff = Math.abs(mNum - currentMonthNum);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = m;
+          }
+        }
+      });
+      setSelectedMes(closest);
     }
-  }, [optI, selectedIndicador]);
+  }, [optI, optM, selectedIndicador, selectedMes]);
 
   const filteredData = useMemo(() => {
     let result = allData;
     if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
+    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
     if (selectedMes) result = result.filter(d => String(d[colMes]) === selectedMes);
     if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
     if (searchTerm) { const st = searchTerm.toLowerCase(); result = result.filter(row => columns.some(col => String(row[col] || '').toLowerCase().includes(st))); }
     return result;
-  }, [allData, columns, selectedUnidade, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes]);
+  }, [allData, columns, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes]);
 
   const filteredDataForTrend = useMemo(() => {
     let result = allData;
     if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
+    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
     if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
     return result;
-  }, [allData, selectedUnidade, selectedEquipe, selectedIndicador]);
+  }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
 
   const variableColumns = useMemo(() => {
     const sampleRows = filteredData.length > 0 ? filteredData : allData;
@@ -651,24 +667,20 @@ function ModuleDashboard({ files, bgClass }: any) {
 
   const activeVariable = useMemo(() => {
     if (!variableColumns.length) return '';
-    
     if (!selectedIndicador) {
       const scoreCol = variableColumns.find(c => ['nota', 'pontua', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
       return scoreCol || variableColumns[variableColumns.length - 1] || '';
     }
-
     const indL = selectedIndicador.toLowerCase();
     
     if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
        const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao entre'));
        if (v) return v;
     }
-    
     if (indL.includes('c7')) {
        const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio') || c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('boa pratica'));
        if (v) return v;
     }
-    
     const pt = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
     if (pt) return pt;
 
@@ -736,34 +748,62 @@ function ModuleDashboard({ files, bgClass }: any) {
     return sortableData;
   }, [tableMode, consolidatedTeams, filteredData, sortConfig]);
 
-  const optM = Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99));
-  const optU = Array.from(new Set(allData.map(d => String(d._ubsLabel || '')))).filter(Boolean).sort();
-  const optE = Array.from(new Set(allData.filter(d => !selectedUnidade || d._ubsLabel === selectedUnidade).map(d => String(d._teamLabel || '')))).filter(Boolean).sort();
+  const optU = useMemo(() => Array.from(new Set(allData
+    .filter(d => !selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe)
+    .map(d => String(d._ubsLabel || ''))
+  )).filter(Boolean).sort(), [allData, selectedTipoEquipe]);
+  
+  const optE = useMemo(() => Array.from(new Set(allData
+    .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe))
+    .map(d => String(d._teamLabel || ''))
+  )).filter(Boolean).sort(), [allData, selectedUnidade, selectedTipoEquipe]);
 
   const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
 
+  // Exibe TODAS as variáveis como cartões
   const variablesChartData = variableColumns.map(col => {
     let sum = 0, count = 0;
     consolidatedTeams.forEach(team => { if (team.varValues[col] !== null && team.varValues[col] !== undefined) { sum += team.varValues[col]!; count++; } });
     return { name: col.length > 22 ? col.substring(0, 20) + '...' : col, fullName: col, valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
   });
 
-  const ubsChartData = (() => {
-    const groups: Record<string, { sum: number; count: number }> = {};
-    consolidatedTeams.forEach(t => {
-      const label = (selectedUnidade || selectedEquipe ? t.equipe : t.unidade).replace('UBS JARDIM', 'UBS JD').replace('UBS NOSSA SENHORA', 'UBS NS');
-      if (!groups[label]) groups[label] = { sum: 0, count: 0 };
-      if (activeVariable) { if (t.varValues[activeVariable] !== null && t.varValues[activeVariable] !== undefined) { groups[label].sum += t.varValues[activeVariable]!; groups[label].count++; } } 
-      else { groups[label].sum++; groups[label].count++; }
+  // GRÁFICO COMPARATIVO POR EQUIPE (Ignora a selectedEquipe, foca na selectedUnidade e selectedTipoEquipe)
+  const teamsComparisonData = useMemo(() => {
+    let baseData = allData;
+    if (selectedUnidade) baseData = baseData.filter(d => d._ubsLabel === selectedUnidade);
+    if (selectedTipoEquipe) baseData = baseData.filter(d => d._tipoEquipe === selectedTipoEquipe);
+    if (selectedMes) baseData = baseData.filter(d => String(d[colMes]) === selectedMes);
+    if (selectedIndicador) baseData = baseData.filter(d => d._mappedIndicator === selectedIndicador);
+
+    const map = new Map<string, {sum: number, count: number, ubs: string}>();
+    baseData.forEach(r => {
+      const key = r._teamLabel;
+      if (!map.has(key)) map.set(key, { sum: 0, count: 0, ubs: r._ubsLabel });
+      if (activeVariable) {
+        const v = parseNum(r[activeVariable]);
+        if (v !== null) { map.get(key)!.sum += v; map.get(key)!.count++; }
+      }
     });
-    return Object.entries(groups).map(([name, g]) => ({ name, valor: Number((activeVariable ? (g.count > 0 ? g.sum / g.count : 0) : g.count).toFixed(2)) })).sort((a, b) => b.valor - a.valor).slice(0, 15);
-  })();
+
+    return Array.from(map.entries()).map(([name, val]) => ({
+      name: name.replace('EQUIPE', 'EQ').substring(0, 15) + (name.length > 15 ? '...' : ''),
+      fullName: `${name} (${val.ubs})`,
+      valor: val.count > 0 ? Number((val.sum / val.count).toFixed(2)) : 0
+    })).sort((a, b) => b.valor - a.valor);
+  }, [allData, selectedUnidade, selectedTipoEquipe, selectedMes, selectedIndicador, activeVariable, colMes]);
 
   const lineChartData = (() => {
     const byMonth = new Map<string, any[]>();
-    filteredDataForTrend.forEach(row => { const mes = String(row[colMes] || 'Geral'); if (!byMonth.has(mes)) byMonth.set(mes, []); byMonth.get(mes)!.push(row); });
+    optM.forEach(m => byMonth.set(m, []));
+    
+    filteredDataForTrend.forEach(row => { 
+      const mes = String(row[colMes] || 'Geral'); 
+      if (byMonth.has(mes)) byMonth.get(mes)!.push(row); 
+    });
+    
     return Array.from(byMonth.entries()).map(([mes, rows]) => {
+      if (rows.length === 0) return { name: mes, valor: null };
       const tMap = new Map<string, { sum: number; count: number }>();
       rows.forEach(r => {
         if (!tMap.has(r._teamKey)) tMap.set(r._teamKey, { sum: 0, count: 0 });
@@ -773,7 +813,7 @@ function ModuleDashboard({ files, bgClass }: any) {
       let sT = 0, cT = 0;
       tMap.forEach(t => { if (t.count > 0) { sT += t.sum / t.count; cT++; } });
       return { name: mes, valor: Number((activeVariable ? (cT > 0 ? sT / cT : 0) : tMap.size).toFixed(2)) };
-    }).sort((a, b) => (monthOrder[a.name] || 99) - (monthOrder[b.name] || 99));
+    });
   })();
 
   const summaryVariablesMap: Record<string, string> = {};
@@ -801,8 +841,11 @@ function ModuleDashboard({ files, bgClass }: any) {
           <div className="flex items-center text-sm font-medium text-slate-700"><Filter className="h-4 w-4 mr-2 text-blue-600" /> Filtros e Variáveis:</div>
           <div className={`px-3 py-1 rounded-full text-xs font-semibold border ${isSingleTeam ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>{isSingleTeam ? `🎯 Reais: ${consolidatedTeams[0]?.equipe || selectedEquipe}` : `📊 Média das ${totalEquipesUnicas} Equipes`}</div>
         </div>
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">📅 Todos os Meses</option>{optM.map(o => <option key={o} value={o}>{o}</option>)}</select>
+          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optM.map(o => <option key={o} value={o}>📅 {o}</option>)}
+          </select>
           
           <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
             {optI.map(o => <option key={o} value={o}>{o}</option>)}
@@ -813,9 +856,15 @@ function ModuleDashboard({ files, bgClass }: any) {
             <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
           </div>
 
+          <select value={selectedTipoEquipe} onChange={e => { setSelectedTipoEquipe(e.target.value); setSelectedUnidade(''); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
+            <option value="">🏷️ Todos tipos de equipe</option>
+            <option value="ESF">Apenas ESF</option>
+            <option value="EAP">Apenas EAP</option>
+          </select>
+
           <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <div className="relative w-full"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></div>
+          <div className="relative w-full lg:col-span-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input type="text" placeholder="Pesquisar Unidade ou Equipe..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></div>
         </div>
       </section>
 
@@ -829,13 +878,13 @@ function ModuleDashboard({ files, bgClass }: any) {
 
       {variablesChartData.length > 0 && (
         <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Valores Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {variablesChartData.map((v, i) => (
-              <div key={i} className={`p-3 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
-                <p className="text-[11px] text-slate-600 font-medium line-clamp-2 leading-tight" title={v.fullName}>{v.fullName}</p>
-                <p className="text-lg font-bold text-slate-900 mt-1.5">{formatVal(v.valor)}</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
+              <div key={i} className={`p-4 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
+                <p className="text-xs text-slate-600 font-medium leading-tight" title={v.fullName}>{v.fullName}</p>
+                <p className={`text-2xl font-bold mt-2 ${v.fullName === activeVariable ? 'text-blue-900' : 'text-slate-800'}`}>{formatVal(v.valor)}</p>
+                <p className="text-[10px] text-slate-500 mt-1">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
               </div>
             ))}
           </div>
@@ -844,9 +893,20 @@ function ModuleDashboard({ files, bgClass }: any) {
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
-          <h3 className="text-base font-bold text-slate-800 mb-1">{isSingleTeam ? 'Valores Reais' : 'Média das Equipes'}</h3>
+          <h3 className="text-base font-bold text-slate-800 mb-1">Comparativo por Equipe</h3>
           <div style={{ height: 290 }}>
-            <ResponsiveContainer><BarChart data={variablesChartData} margin={{ top: 25, right: 15, left: -10, bottom: 55 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} angle={-30} textAnchor="end" interval={0} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName]} /><Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={48}>{variablesChartData.map((e, i) => <Cell key={i} fill={e.fullName === activeVariable ? '#1D4ED8' : C_COLORS[i % C_COLORS.length]} />)}<LabelList dataKey="valor" position="top" fontSize={11} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Bar></BarChart></ResponsiveContainer>
+            <ResponsiveContainer>
+              <BarChart data={teamsComparisonData} margin={{ top: 25, right: 15, left: -10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-40} textAnchor="end" interval={0} />
+                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName || activeVariable]} />
+                <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {teamsComparisonData.map((e, i) => <Cell key={i} fill={'#1D4ED8'} />)}
+                  <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -857,23 +917,18 @@ function ModuleDashboard({ files, bgClass }: any) {
             ) : <div className="h-full flex items-center justify-center text-slate-400 text-sm">Sem classificação</div>}
           </div>
         </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
-          <h3 className="text-base font-bold text-slate-800 mb-1">{selectedUnidade || selectedEquipe ? `Equipes (${selectedUnidade})` : 'Por Unidade (UBS)'}</h3>
+        
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
+          <h3 className="text-base font-bold text-slate-800 mb-1">Evolução Mensal ({activeVariable || 'Variável Focada'})</h3>
           <div style={{ height: 280 }}>
-            <ResponsiveContainer><BarChart data={ubsChartData} margin={{ top: 25, right: 10, left: -10, bottom: 50 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} angle={-35} textAnchor="end" interval={0} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(v:number) => [formatVal(v), activeVariable || 'Valor']} /><Bar dataKey="valor" fill="#118DFF" radius={[4, 4, 0, 0]} maxBarSize={45}><LabelList dataKey="valor" position="top" fontSize={11} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Bar></BarChart></ResponsiveContainer>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="text-base font-bold text-slate-800 mb-1">Evolução Mensal</h3>
-          <div style={{ height: 280 }}>
-            <ResponsiveContainer><LineChart data={lineChartData} margin={{ top: 25, right: 25, left: -10, bottom: 15 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} padding={{ left: 20, right: 20 }} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(v:number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} /><Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }}><LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Line></LineChart></ResponsiveContainer>
+            <ResponsiveContainer><LineChart data={lineChartData} margin={{ top: 25, right: 25, left: -10, bottom: 15 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} padding={{ left: 20, right: 20 }} /><YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} /><Tooltip formatter={(v:number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} /><Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }} connectNulls={false}><LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v:number) => formatVal(v)} /></Line></LineChart></ResponsiveContainer>
           </div>
         </div>
       </section>
 
       <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-base font-bold text-slate-800 flex items-center"><FileText className="h-5 w-5 mr-2 text-blue-600" /> Relatório Tabela</h3>
+          <h3 className="text-base font-bold text-slate-800 flex items-center"><FileText className="h-5 w-5 mr-2 text-blue-600" /> Relatório Completo (Planilha)</h3>
           <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg text-xs">
             <button onClick={() => setTableMode('consolidado')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'consolidado' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Por Equipe</button>
             <button onClick={() => setTableMode('historico')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'historico' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Histórico Mês</button>
