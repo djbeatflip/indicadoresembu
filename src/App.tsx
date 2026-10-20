@@ -20,7 +20,7 @@ const firebaseConfig = {
   measurementId: "G-E1GWDGC1R2"
 };
 
-// Inicialização Segura do Firebase (Evita o "Crash" por Duplicidade)
+// Inicialização Segura do Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const secondaryApp = getApps().find(a => a.name === "Secondary") || initializeApp(firebaseConfig, "Secondary");
 
@@ -47,19 +47,34 @@ const normStat = (v: any): string | null => { const s = String(v || '').toLowerC
 const extMes = (f: string) => { const u = f.toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return f.split('-')[0].replace(/[0-9]/g, '').trim() || f; };
 const extInd = (f: string) => f.split('-').length > 1 ? f.split('-').slice(1).join('-').trim() : f.trim();
 
-// --- MOTOR DE LEITURA DE PLANILHAS ---
+// --- MOTOR DE LEITURA DE PLANILHAS (NOVO E INTELIGENTE) ---
 const buildRows = (rows: any[][]) => {
-  let hIdx = rows.findIndex(r => r.join(' ').toUpperCase().includes('CNES'));
-  if (hIdx === -1) hIdx = 0;
+  // Encontrar a verdadeira linha de cabeçalho com várias palavras-chave do e-SUS
+  let hIdx = rows.findIndex(r => {
+    const j = r.join(' ').toUpperCase();
+    return j.includes('CNES') || j.includes('INE') || j.includes('EQUIPE') || j.includes('UNIDADE') || j.includes('ESTABELECIMENTO');
+  });
+  
+  // Se mesmo assim não achar, procura a linha que tem mais colunas preenchidas (garantia)
+  if (hIdx === -1) {
+    let maxCols = 0;
+    rows.forEach((r, i) => {
+      const cols = r.filter(c => String(c).trim() !== '').length;
+      if (cols > maxCols) { maxCols = cols; hIdx = i; }
+    });
+  }
+
   const h1 = rows[hIdx] || [], h2 = rows[hIdx + 1] || [];
-  const cnesIdx = h1.findIndex(c => String(c).toUpperCase().includes('CNES'));
-  const cnesVal = String(h2[cnesIdx] || '').trim();
-  const isSub = h2.length > 0 && (!cnesVal || !cnesVal.replace(/\D/g, '') || cnesVal.toUpperCase().includes('CNES'));
+  const isSub = h2.length > 0 && h2.some(c => {
+     const s = String(c).toUpperCase();
+     return s === 'CÓDIGO' || s === 'CODIGO' || s === 'NOME' || s.includes('INE');
+  }) && !h2.join(' ').toUpperCase().includes('TOTAL');
   
   const headers: string[] = [];
   for (let c = 0; c < Math.max(h1.length, isSub ? h2.length : 0); c++) {
     const v1 = String(h1[c] || '').trim(), v2 = isSub ? String(h2[c] || '').trim() : '';
-    let ch = (v2 && v2.toUpperCase() !== v1.toUpperCase()) ? (v1.length <= 15 && ['NOME', 'CÓDIGO', 'CODIGO'].includes(v2.toUpperCase()) ? `${v1} - ${v2}` : v2) : v1;
+    let ch = (v2 && v2.toUpperCase() !== v1.toUpperCase()) ? (v1.length <= 15 && ['NOME', 'CÓDIGO', 'CODIGO', 'INE'].includes(v2.toUpperCase()) ? `${v1} - ${v2}` : v2) : v1;
+    if (!ch && v1) ch = v1;
     headers.push(headers.includes(ch) && ch ? `${ch} (${c + 1})` : ch);
   }
 
@@ -80,15 +95,11 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState('dashboard');
-  
-  // ESTADO PARA RECOLHER/EXPANDIR O MENU LATERAL
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  
   const [files, setFiles] = useState<ImportedFile[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
   const [sysTheme, setSysTheme] = useState('blue');
 
-  // Monitora o Estado de Login via Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -103,7 +114,6 @@ export default function App() {
           const setDocSnap = await getDoc(doc(db, 'settings', 'layout'));
           if (setDocSnap.exists()) setSysTheme(setDocSnap.data().themeColor);
 
-          // Busca Arquivos da Nuvem
           const filesSnap = await getDocs(collection(db, 'dados_siaps'));
           const agrupados = new Map<string, ImportedFile>();
           filesSnap.docs.forEach(d => {
@@ -143,11 +153,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex overflow-hidden">
-      
-      {/* MENU LATERAL (COM TRANSIÇÃO E LARGURA DINÂMICA) */}
       <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20 transition-all duration-300 ease-in-out shrink-0`}>
-        
-        {/* CABEÇALHO DO MENU */}
         <div className={`p-4 ${bgClass} bg-opacity-90 flex items-center h-20 border-b border-slate-800 transition-all ${isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
           {isSidebarOpen ? (
             <>
@@ -169,10 +175,8 @@ export default function App() {
           )}
         </div>
         
-        {/* ITENS DO MENU */}
         <div className="p-4 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-thin">
           {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Módulos</p>}
-          
           <button onClick={() => setActiveModule('dashboard')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'dashboard' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Dashboard SIAPS" : ""}>
             <Layout className="h-5 w-5 shrink-0" />
             {isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
@@ -187,12 +191,7 @@ export default function App() {
 
           {(currentUser.role === 'Administrador') && (
             <>
-              {isSidebarOpen ? (
-                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p>
-              ) : (
-                 <div className="h-px bg-slate-800 my-4 mx-2"></div>
-              )}
-              
+              {isSidebarOpen ? ( <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p> ) : ( <div className="h-px bg-slate-800 my-4 mx-2"></div> )}
               <button onClick={() => setActiveModule('users')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'users' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Usuários" : ""}>
                 <Users className="h-5 w-5 shrink-0" />
                 {isSidebarOpen && <span className="whitespace-nowrap">Usuários</span>}
@@ -209,31 +208,19 @@ export default function App() {
           )}
         </div>
 
-        {/* RODAPÉ DO MENU (USUÁRIO E SAIR) */}
         <div className="p-4 border-t border-slate-800 bg-slate-950">
           {isSidebarOpen ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3 overflow-hidden">
-                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>
-                  {currentUser.name.charAt(0)}
-                </div>
-                <div className="truncate w-28">
-                  <p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p>
-                  <p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p>
-                </div>
+                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>{currentUser.name.charAt(0)}</div>
+                <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p><p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p></div>
               </div>
-              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema">
-                <LogOut className="h-4 w-4 shrink-0" />
-              </button>
+              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
             </div>
           ) : (
             <div className="flex flex-col items-center space-y-4">
-              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>
-                {currentUser.name.charAt(0)}
-              </div>
-              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema">
-                <LogOut className="h-4 w-4 shrink-0" />
-              </button>
+              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>{currentUser.name.charAt(0)}</div>
+              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
             </div>
           )}
         </div>
@@ -250,9 +237,6 @@ export default function App() {
   );
 }
 
-// ==========================================
-// TELA DE LOGIN & RECUPERAÇÃO DE SENHA
-// ==========================================
 function LoginScreen({ bgClass }: any) {
   const [isRegister, setIsRegister] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
@@ -270,11 +254,7 @@ function LoginScreen({ bgClass }: any) {
       if (isRegister) {
         const nome = frm.nome.value;
         const userCred = await createUserWithEmailAndPassword(auth, email, pass);
-        await setDoc(doc(db, 'users', userCred.user.uid), {
-          email: email,
-          name: nome,
-          role: 'Administrador'
-        });
+        await setDoc(doc(db, 'users', userCred.user.uid), { email: email, name: nome, role: 'Administrador' });
       } else {
         await signInWithEmailAndPassword(auth, email, pass);
       }
@@ -289,7 +269,6 @@ function LoginScreen({ bgClass }: any) {
     setSuccessMsg('');
     const frm = e.target as any;
     const email = frm.email.value;
-
     try {
       await sendPasswordResetEmail(auth, email);
       setSuccessMsg('E-mail de recuperação enviado! Verifique a sua caixa de entrada e spam.');
@@ -310,30 +289,18 @@ function LoginScreen({ bgClass }: any) {
             <p className="text-center text-slate-500 text-sm mb-6">Recuperar Palavra-passe</p>
             {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
             {successMsg && <div className="bg-emerald-50 text-emerald-600 p-3 rounded-lg text-xs mb-4 text-center border border-emerald-200">{successMsg}</div>}
-            
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail Cadastrado</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
-                Enviar link de recuperação
-              </button>
+              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>Enviar link de recuperação</button>
             </form>
-            
-            <div className="mt-6 text-center">
-              <button onClick={() => {setIsForgot(false); setErrorMsg(''); setSuccessMsg('');}} className="text-xs text-slate-500 hover:underline">
-                Voltar ao Login
-              </button>
-            </div>
+            <div className="mt-6 text-center"><button onClick={() => {setIsForgot(false); setErrorMsg(''); setSuccessMsg('');}} className="text-xs text-slate-500 hover:underline">Voltar ao Login</button></div>
           </>
         ) : (
           <>
             <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
-            
             {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
-
             <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && (
-                <div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-              )}
+              {isRegister && (<div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>)}
               <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
               <div>
                 <div className="flex justify-between items-center mb-1">
@@ -342,17 +309,9 @@ function LoginScreen({ bgClass }: any) {
                 </div>
                 <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
               </div>
-              
-              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
-                {isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}
-              </button>
+              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>{isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}</button>
             </form>
-
-            <div className="mt-6 text-center">
-              <button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">
-                {isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}
-              </button>
-            </div>
+            <div className="mt-6 text-center"><button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">{isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}</button></div>
           </>
         )}
       </div>
@@ -360,9 +319,6 @@ function LoginScreen({ bgClass }: any) {
   );
 }
 
-// ==========================================
-// MÓDULO: IMPORTAÇÃO PARA O FIRESTORE
-// ==========================================
 function ModuleImport({ files, setFiles, bgClass }: any) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
@@ -371,7 +327,6 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
     if (selectedFiles.length === 0) return;
-    
     setIsProcessing(true);
     const newFiles: ImportedFile[] = [];
 
@@ -381,7 +336,6 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
       if (!['csv', 'xlsx', 'xls'].includes(ext || '')) continue;
       
       setProgressMsg(`Lendo ${file.name}...`);
-
       const fileData = await new Promise<any[]>((resolve) => {
         if (ext === 'csv') {
           Papa.parse(file, { header: false, skipEmptyLines: true, complete: (res) => resolve(buildRows(res.data as any[][])) });
@@ -401,7 +355,6 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
         const cleanName = file.name.replace(/\.[^/.]+$/, "");
         const properMonth = extMes(cleanName);
         const properIndicator = extInd(cleanName);
-        
         const enrichedData = fileData.map(r => ({ ...r, _arquivoOrigem: cleanName, _mesOrigem: properMonth, _indicadorOrigem: properIndicator }));
         newFiles.push({ id: Date.now() + '-' + Math.random().toString(36).substring(2,7), name: file.name, data: enrichedData });
         
@@ -409,24 +362,15 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
         try {
           let batch = writeBatch(db);
           let opCount = 0;
-          
           for (let i = 0; i < enrichedData.length; i++) {
              const row = enrichedData[i];
              const rowId = `${cleanName}_${i}_${Date.now()}`;
              const docRef = doc(db, 'dados_siaps', rowId);
              batch.set(docRef, row);
              opCount++;
-             
-             if (opCount >= 400 || i === enrichedData.length - 1) {
-                await batch.commit();
-                batch = writeBatch(db);
-                opCount = 0;
-             }
+             if (opCount >= 400 || i === enrichedData.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
           }
-        } catch (err: any) {
-           console.error("Erro ao salvar arquivo:", err);
-           alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`);
-        }
+        } catch (err: any) { alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`); }
       }
     }
 
@@ -444,30 +388,20 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
   };
 
   const handleClearCloud = async () => {
-    if(!window.confirm('CUIDADO: Isso apagará TODOS os relatórios do banco de dados na nuvem para todos os usuários! Tem certeza?')) return;
+    if(!window.confirm('CUIDADO: Isso apagará TODOS os relatórios do banco de dados na nuvem! Tem certeza?')) return;
     setIsProcessing(true);
     setProgressMsg('Apagando nuvem...');
-    
     try {
       const qs = await getDocs(collection(db, 'dados_siaps'));
       let batch = writeBatch(db);
       let opCount = 0;
-      
       for(let i = 0; i < qs.docs.length; i++) {
          batch.delete(qs.docs[i].ref);
          opCount++;
-         if(opCount >= 400 || i === qs.docs.length - 1) {
-            await batch.commit();
-            batch = writeBatch(db);
-            opCount = 0;
-         }
+         if(opCount >= 400 || i === qs.docs.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
       }
       setFiles([]);
-    } catch(e) {
-      console.error(e);
-      alert('Erro ao apagar. Verifique regras do Firestore.');
-    }
-    
+    } catch(e) { alert('Erro ao apagar. Verifique regras do Firestore.'); }
     setIsProcessing(false);
     setProgressMsg('');
   };
@@ -478,9 +412,7 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
         <div className={`mx-auto w-16 h-16 ${bgClass} bg-opacity-10 rounded-full flex items-center justify-center mb-4`}><UploadCloud className={`h-8 w-8 text-slate-700`} /></div>
         <h3 className="font-bold text-xl text-slate-800">Conexão de Dados na Nuvem</h3>
         <p className="text-slate-500 mb-6 mt-2 max-w-lg mx-auto">Selecione as planilhas do SIAPS do seu computador. O sistema vai fatiar as planilhas e enviar para o banco de dados Firebase.</p>
-        
         {isProcessing && <p className="text-blue-600 font-bold mb-4 animate-pulse">{progressMsg}</p>}
-
         <div className="flex justify-center gap-4">
           <label className={`cursor-pointer inline-flex items-center px-6 py-3 rounded-lg text-white font-bold shadow-md transition-all hover:opacity-90 ${bgClass}`}>
             <FolderOpen className="h-5 w-5 mr-2"/> {isProcessing ? 'Processando...' : 'Selecionar e Enviar para Nuvem'}
@@ -496,11 +428,7 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
             <button onClick={handleClearCloud} disabled={isProcessing} className="text-red-500 text-sm hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center"><Trash2 className="h-4 w-4 mr-1"/> Apagar TUDO da Nuvem</button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {files.map((f: ImportedFile) => (
-              <div key={f.id} className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 flex items-center">
-                <FileText className="h-3.5 w-3.5 mr-1.5 text-blue-500"/>{f.name}
-              </div>
-            ))}
+            {files.map((f: ImportedFile) => (<div key={f.id} className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 flex items-center"><FileText className="h-3.5 w-3.5 mr-1.5 text-blue-500"/>{f.name}</div>))}
           </div>
         </div>
       )}
@@ -508,9 +436,6 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
   );
 }
 
-// ==========================================
-// SUB-MÓDULOS DE ADMINISTRAÇÃO
-// ==========================================
 function ModuleUsers({ usersList, setUsersList, bgClass }: any) {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault(); 
@@ -519,21 +444,16 @@ function ModuleUsers({ usersList, setUsersList, bgClass }: any) {
     const pass = frm.pass.value;
     const name = frm.nome.value;
     const role = frm.role.value;
-
     try {
       const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
       const newUid = userCred.user.uid;
       const newUser = { email, name, role };
       await setDoc(doc(db, 'users', newUid), newUser);
-      
       setUsersList([...usersList, { id: newUid, ...newUser }]);
       frm.reset();
       alert('Usuário cadastrado com sucesso!');
-    } catch (err: any) {
-      alert('Erro ao cadastrar: ' + err.message);
-    }
+    } catch (err: any) { alert('Erro ao cadastrar: ' + err.message); }
   };
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="md:col-span-1 bg-white p-5 rounded-xl border border-slate-200 shadow-sm h-fit">
@@ -571,40 +491,37 @@ function ModuleAccess({ bgClass }: any) {
 }
 
 function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
-  const handleSaveTheme = async (theme: string) => {
-    setSysTheme(theme);
-    await setDoc(doc(db, 'settings', 'layout'), { themeColor: theme });
-  };
+  const handleSaveTheme = async (theme: string) => { setSysTheme(theme); await setDoc(doc(db, 'settings', 'layout'), { themeColor: theme }); };
   return (
     <div className="max-w-2xl bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div className={`p-5 ${bgClass} text-white`}><h2 className="text-lg font-bold flex items-center"><Settings className="mr-2 h-5 w-5"/> Customizar Interface</h2></div>
       <div className="p-6">
         <h3 className="text-sm font-bold text-slate-800 mb-3">Cor Principal</h3>
         <div className="flex space-x-3">
-          {['blue', 'emerald', 'violet', 'slate'].map(c => (
-            <button key={c} onClick={() => handleSaveTheme(c)} className={`h-12 w-12 rounded-full border-4 transition-all ${sysTheme === c ? 'border-slate-800 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`} style={{ backgroundColor: c==='blue'?'#2563eb':c==='emerald'?'#059669':c==='violet'?'#7c3aed':'#334155' }} />
-          ))}
+          {['blue', 'emerald', 'violet', 'slate'].map(c => (<button key={c} onClick={() => handleSaveTheme(c)} className={`h-12 w-12 rounded-full border-4 transition-all ${sysTheme === c ? 'border-slate-800 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`} style={{ backgroundColor: c==='blue'?'#2563eb':c==='emerald'?'#059669':c==='violet'?'#7c3aed':'#334155' }} />))}
         </div>
       </div>
     </div>
   );
 }
 
-// ==========================================
-// SUB-MÓDULO: DASHBOARD SIAPS (O VISUAL)
-// ==========================================
 function ModuleDashboard({ files, bgClass }: any) {
-  // DECLARA TODOS OS HOOKS AQUI EM CIMA PARA O REACT NÃO TRAVAR
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => !c.startsWith('_') && !c.toUpperCase().includes('EMPTY') && c.trim() !== ''), [rawAllData]);
 
-  const colUnidade = useMemo(() => columns.slice(0, 8).find(c => ['estabeleci', 'unidade', 'ubs', 'nome'].some(w => c.toLowerCase().includes(w)) && !c.toLowerCase().includes('cnes')) || null, [columns]);
-  const colIne = useMemo(() => columns.slice(0, 8).find(c => ['ine', 'código ine', 'codigo ine'].includes(c.toLowerCase().trim()) || c.toLowerCase().endsWith(' ine')) || null, [columns]);
+  const colUnidade = useMemo(() => {
+    const c = columns.slice(0, 12);
+    return c.find(x => x.toLowerCase().includes('estabeleci')) || c.find(x => x.toLowerCase().includes('unidade')) || c.find(x => x.toLowerCase().includes('ubs')) || null;
+  }, [columns]);
+
+  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(c.toLowerCase().trim()) || c.toLowerCase().endsWith(' ine')) || null, [columns]);
+
   const colEquipe = useMemo(() => {
-    const blocks = ['nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho', 'ter pelo menos', 'realizar', 'solicita'];
-    const candidates = columns.slice(0, 7).filter(c => c !== colUnidade && c !== colIne && !blocks.some(w => c.toLowerCase().includes(w)) && ['equipe', 'nome', 'identifica', 'descri'].some(w => c.toLowerCase().includes(w)) && !c.toLowerCase().includes('cnes') && !c.toLowerCase().includes('ibge'));
-    return candidates.find(c => c.toLowerCase().includes('nome')) || candidates.find(c => !c.toLowerCase().includes('tipo') && !c.toLowerCase().includes('sigla')) || candidates[0] || null;
+    const blocks = ['nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho'];
+    const candidates = columns.slice(0, 12).filter(c => c !== colUnidade && c !== colIne && !blocks.some(w => c.toLowerCase().includes(w)));
+    return candidates.find(c => c.toLowerCase().includes('nome da equipe')) || candidates.find(c => c.toLowerCase().includes('equipe') && !c.toLowerCase().includes('tipo')) || candidates.find(c => c.toLowerCase().includes('nome')) || candidates[0] || null;
   }, [columns, colUnidade, colIne]);
+
   const colMes = '_mesOrigem';
   const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(c.toLowerCase())) || '_indicadorOrigem', [columns]);
 
@@ -630,6 +547,7 @@ function ModuleDashboard({ files, bgClass }: any) {
         let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
         n = n.replace(/\(\s*0*\d+\s*\)/g, '').trim();
         const ic = colIne ? normIne(r[colIne]) : '';
+        if (n && (n.length <= 4 || n.toLowerCase() === 'equipe' || n.toLowerCase() === 'esf' || n.toLowerCase() === 'eap') && ic) n = `${n} (INE ${ic})`;
         if (n) return n.toUpperCase();
         return ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`;
       });
@@ -662,10 +580,7 @@ function ModuleDashboard({ files, bgClass }: any) {
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
     if (selectedMes) result = result.filter(d => String(d[colMes]) === selectedMes);
     if (selectedIndicador) result = result.filter(d => String(d[colIndicador]) === selectedIndicador);
-    if (searchTerm) {
-      const st = searchTerm.toLowerCase();
-      result = result.filter(row => columns.some(col => String(row[col] || '').toLowerCase().includes(st)));
-    }
+    if (searchTerm) { const st = searchTerm.toLowerCase(); result = result.filter(row => columns.some(col => String(row[col] || '').toLowerCase().includes(st))); }
     return result;
   }, [allData, columns, selectedUnidade, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes, colIndicador]);
 
@@ -700,7 +615,6 @@ function ModuleDashboard({ files, bgClass }: any) {
     if (filteredData.length === 0) return [];
     const statusCol = columns.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => c.toLowerCase().includes(w)));
     const teamMap = new Map<string, any>();
-    
     filteredData.forEach(row => {
       const key = row._teamKey;
       if (!teamMap.has(key)) teamMap.set(key, { key, uni: row._ubsLabel, eq: row._teamLabel, rows: [] });
@@ -709,33 +623,22 @@ function ModuleDashboard({ files, bgClass }: any) {
 
     return Array.from(teamMap.values()).map(group => {
       const varValues: Record<string, number | null> = {};
-      variableColumns.forEach(c => {
-        let sum = 0, cnt = 0;
-        group.rows.forEach((r: any) => { const n = parseNum(r[c]); if (n !== null) { sum += n; cnt++; } });
-        varValues[c] = cnt > 0 ? sum / cnt : null;
-      });
-
+      variableColumns.forEach(c => { let sum = 0, cnt = 0; group.rows.forEach((r: any) => { const n = parseNum(r[c]); if (n !== null) { sum += n; cnt++; } }); varValues[c] = cnt > 0 ? sum / cnt : null; });
       let weightSum = 0, weightCount = 0;
       group.rows.forEach((r: any) => { 
         let st = statusCol ? normStat(r[statusCol]) : null;
         if (!st) for (let i = columns.length - 1; i >= 0; i--) if ((st = normStat(r[columns[i]]))) break;
         if (!st && activeVariable) {
           const v = parseNum(r[activeVariable]);
-          if (v !== null) {
-            const pct = v <= 10 && v > 0 ? v * 10 : v;
-            st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular';
-          }
+          if (v !== null) { const pct = v <= 10 && v > 0 ? v * 10 : v; st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular'; }
         }
         if (st) { weightSum += S_WEIGHTS[st]; weightCount++; } 
       });
-      
       const avgWeight = weightCount > 0 ? Math.round(weightSum / weightCount) : null;
       const finalStatus = avgWeight ? W_STATUS[Math.min(4, Math.max(1, avgWeight))] : null;
-
       const baseRow = { ...group.rows[group.rows.length - 1] };
       variableColumns.forEach(c => { if (varValues[c] !== null) baseRow[c] = formatVal(Number(varValues[c]!.toFixed(2))); });
       if (statusCol && finalStatus) baseRow[statusCol] = finalStatus;
-
       const uniqueMonths = Array.from(new Set(group.rows.map((r: any) => r._mesOrigem)));
       return { key: group.key, unidade: group.uni, equipe: group.eq, varValues, status: finalStatus, monthsLabel: uniqueMonths.join(', '), consolidatedRow: baseRow };
     });
@@ -756,10 +659,7 @@ function ModuleDashboard({ files, bgClass }: any) {
       sortableData.sort((a, b) => {
         const valA = a[sortConfig.key], valB = b[sortConfig.key];
         const stA = normStat(valA), stB = normStat(valB);
-        if (stA && stB) {
-          const rankA = S_WEIGHTS[stA] || 0, rankB = S_WEIGHTS[stB] || 0;
-          if (rankA !== rankB) return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA;
-        }
+        if (stA && stB) { const rankA = S_WEIGHTS[stA] || 0, rankB = S_WEIGHTS[stB] || 0; if (rankA !== rankB) return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA; }
         const numA = parseNum(valA), numB = parseNum(valB);
         if (numA !== null && numB !== null) return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
         const strA = String(valA || '').toLowerCase(), strB = String(valB || '').toLowerCase();
@@ -822,7 +722,6 @@ function ModuleDashboard({ files, bgClass }: any) {
     { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
   ].filter(d => d.total > 0);
 
-  // --- TRAVA DE SEGURANÇA: SE NÃO HOUVER ARQUIVOS, MOSTRA ECRÃ VAZIO ---
   if (files.length === 0) return (
     <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
       <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
@@ -930,16 +829,8 @@ function ModuleDashboard({ files, bgClass }: any) {
                   <td className="px-3 py-2 font-semibold bg-blue-50/10">{r._eq}</td>
                   {columns.map(c => {
                     let st = null;
-                    if (c.toLowerCase().includes('classifica') || c.toLowerCase().includes('conceito') || c.toLowerCase().includes('qualidade') || c.toLowerCase().includes('status')) {
-                      st = normStat(r[c]);
-                    }
-                    if (!st && c === activeVariable) {
-                      const v = parseNum(r[c]);
-                      if (v !== null) {
-                         const pct = v <= 10 && v > 0 ? v * 10 : v;
-                         st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular';
-                      }
-                    }
+                    if (c.toLowerCase().includes('classifica') || c.toLowerCase().includes('conceito') || c.toLowerCase().includes('qualidade') || c.toLowerCase().includes('status')) { st = normStat(r[c]); }
+                    if (!st && c === activeVariable) { const v = parseNum(r[c]); if (v !== null) { const pct = v <= 10 && v > 0 ? v * 10 : v; st = pct > 75 ? 'Ótimo' : pct > 50 ? 'Bom' : pct > 25 ? 'Suficiente' : 'Regular'; } }
                     return <td key={c} className={`px-3 py-2 text-slate-600 ${c === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{String(r[c])}</span> : String(r[c] ?? '')}</td>;
                   })}
                 </tr>
