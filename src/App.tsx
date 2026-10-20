@@ -597,7 +597,6 @@ function ModuleDashboard({ files, bgClass }: any) {
   const [selectedEquipe, setSelectedEquipe] = useState('');
   const [selectedMes, setSelectedMes] = useState('');
   const [selectedIndicador, setSelectedIndicador] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
 
@@ -639,9 +638,8 @@ function ModuleDashboard({ files, bgClass }: any) {
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
     if (selectedMes) result = result.filter(d => String(d[colMes]) === selectedMes);
     if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
-    if (searchTerm) { const st = searchTerm.toLowerCase(); result = result.filter(row => columns.some(col => String(row[col] || '').toLowerCase().includes(st))); }
     return result;
-  }, [allData, columns, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes]);
+  }, [allData, columns, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedMes, selectedIndicador, colMes]);
 
   const filteredDataForTrend = useMemo(() => {
     let result = allData;
@@ -687,6 +685,8 @@ function ModuleDashboard({ files, bgClass }: any) {
     const scoreCol = variableColumns.find(c => ['nota', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
     return scoreCol || variableColumns[variableColumns.length - 1] || '';
   }, [selectedIndicador, variableColumns]);
+
+  const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
 
   const consolidatedTeams = useMemo(() => {
     if (filteredData.length === 0) return [];
@@ -761,14 +761,12 @@ function ModuleDashboard({ files, bgClass }: any) {
   const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
 
-  // Exibe TODAS as variáveis como cartões no Resumo
   const variablesChartData = variableColumns.map(col => {
     let sum = 0, count = 0;
     consolidatedTeams.forEach(team => { if (team.varValues[col] !== null && team.varValues[col] !== undefined) { sum += team.varValues[col]!; count++; } });
     return { name: col.length > 22 ? col.substring(0, 20) + '...' : col, fullName: col, valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
   });
 
-  // GRÁFICO COMPARATIVO POR EQUIPE
   const teamsComparisonData = useMemo(() => {
     let baseData = allData;
     if (selectedUnidade) baseData = baseData.filter(d => d._ubsLabel === selectedUnidade);
@@ -817,7 +815,11 @@ function ModuleDashboard({ files, bgClass }: any) {
   })();
 
   const summaryVariablesMap: Record<string, string> = {};
-  variablesChartData.forEach(v => summaryVariablesMap[v.fullName] = formatVal(v.valor));
+  variableColumns.forEach(col => {
+    let sum = 0, count = 0;
+    consolidatedTeams.forEach(team => { if (team.varValues[col] !== null && team.varValues[col] !== undefined) { sum += team.varValues[col]!; count++; } });
+    summaryVariablesMap[col] = formatVal(Number((count > 0 ? sum / count : 0).toFixed(2)));
+  });
 
   const statusPieData = [
     { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
@@ -843,28 +845,25 @@ function ModuleDashboard({ files, bgClass }: any) {
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
-            {optM.map(o => <option key={o} value={o}>📅 {o}</option>)}
-          </select>
-          
-          <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
-            {optI.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-          
-          <div className="w-full px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-blue-50/60 text-blue-950 flex flex-col justify-center overflow-hidden h-[42px]">
-            <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-none mb-0.5">Variável Automática Selecionada</span>
-            <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
-          </div>
-
+          {/* ORDENAÇÃO EXATA: 1. Unidades, 2. Equipes, 3. Tipo, 4. Indicador, 5. Mês, 6. Variável */}
+          <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
+          <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <select value={selectedTipoEquipe} onChange={e => { setSelectedTipoEquipe(e.target.value); setSelectedUnidade(''); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
             <option value="">🏷️ Todos tipos de equipe</option>
             <option value="ESF">Apenas ESF</option>
             <option value="EAP">Apenas EAP</option>
           </select>
 
-          <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <div className="relative w-full lg:col-span-3"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input type="text" placeholder="Pesquisar Unidade ou Equipe..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></div>
+          <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optI.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optM.map(o => <option key={o} value={o}>📅 {o}</option>)}
+          </select>
+          <div className="w-full px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-blue-50/60 text-blue-950 flex flex-col justify-center overflow-hidden h-[42px]">
+            <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-none mb-0.5">Variável Automática Selecionada</span>
+            <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
+          </div>
         </div>
       </section>
 
