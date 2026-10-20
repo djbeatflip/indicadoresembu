@@ -32,7 +32,7 @@ const secondaryAuth = getAuth(secondaryApp);
 interface ImportedFile { id: string; name: string; lastModified?: number; data: any[]; }
 interface User { id: string; email: string; role: string; name: string; }
 
-// --- UTILITÁRIOS MATEMÁTICOS ---
+// --- UTILITÁRIOS MATEMÁTICOS & PADRONIZAÇÃO ---
 const monthOrder: Record<string, number> = { 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6, 'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12 };
 const S_COLORS: Record<string, string> = { 'Ótimo': '#3B82F6', 'Bom': '#10B981', 'Suficiente': '#F59E0B', 'Regular': '#EF4444' };
 const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Suficiente': 2, 'Bom': 3, 'Ótimo': 4 };
@@ -47,28 +47,33 @@ const normStat = (v: any): string | null => { const s = String(v || '').toLowerC
 const extMes = (f: string) => { const u = f.toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return f.split('-')[0].replace(/[0-9]/g, '').trim() || f; };
 const extInd = (f: string) => f.split('-').length > 1 ? f.split('-').slice(1).join('-').trim() : f.trim();
 
-// --- MOTOR DE LEITURA DE PLANILHAS (NOVO E INTELIGENTE) ---
+// PADRONIZADOR DE INDICADORES
+const mapIndicatorName = (name: string) => {
+  const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if(n.includes('acesso')) return 'C1 - Mais Acesso';
+  if(n.includes('infantil')) return 'C2 - Desenvolvimento Infantil';
+  if(n.includes('gesta') || n.includes('puerp')) return 'C3 - Cuidado na gestação e Puerpério';
+  if(n.includes('diabet')) return 'C4 - Diabetes';
+  if(n.includes('hiperten')) return 'C5 - Hipertensão';
+  if(n.includes('idos')) return 'C6 - Idosos';
+  if(n.includes('cancer') || n.includes('feminino') || n.includes('colo')) return 'C7 - Prevenção cancer feminino';
+  if(n.includes('vinculo') || n.includes('territorial')) return 'Vínculo e Acompanhamento Territorial';
+  return name.toUpperCase();
+};
+
+// --- MOTOR DE LEITURA DE PLANILHAS (INTELIGENTE) ---
 const buildRows = (rows: any[][]) => {
-  // Encontrar a verdadeira linha de cabeçalho com várias palavras-chave do e-SUS
   let hIdx = rows.findIndex(r => {
     const j = r.join(' ').toUpperCase();
     return j.includes('CNES') || j.includes('INE') || j.includes('EQUIPE') || j.includes('UNIDADE') || j.includes('ESTABELECIMENTO');
   });
-  
-  // Se mesmo assim não achar, procura a linha que tem mais colunas preenchidas (garantia)
   if (hIdx === -1) {
     let maxCols = 0;
-    rows.forEach((r, i) => {
-      const cols = r.filter(c => String(c).trim() !== '').length;
-      if (cols > maxCols) { maxCols = cols; hIdx = i; }
-    });
+    rows.forEach((r, i) => { const cols = r.filter(c => String(c).trim() !== '').length; if (cols > maxCols) { maxCols = cols; hIdx = i; } });
   }
 
   const h1 = rows[hIdx] || [], h2 = rows[hIdx + 1] || [];
-  const isSub = h2.length > 0 && h2.some(c => {
-     const s = String(c).toUpperCase();
-     return s === 'CÓDIGO' || s === 'CODIGO' || s === 'NOME' || s.includes('INE');
-  }) && !h2.join(' ').toUpperCase().includes('TOTAL');
+  const isSub = h2.length > 0 && h2.some(c => { const s = String(c).toUpperCase(); return s === 'CÓDIGO' || s === 'CODIGO' || s === 'NOME' || s.includes('INE'); }) && !h2.join(' ').toUpperCase().includes('TOTAL');
   
   const headers: string[] = [];
   for (let c = 0; c < Math.max(h1.length, isSub ? h2.length : 0); c++) {
@@ -119,9 +124,7 @@ export default function App() {
           filesSnap.docs.forEach(d => {
              const row = d.data();
              const fileName = row._arquivoOrigem + '.xlsx';
-             if(!agrupados.has(fileName)) {
-                agrupados.set(fileName, { id: fileName, name: fileName, data: [] });
-             }
+             if(!agrupados.has(fileName)) { agrupados.set(fileName, { id: fileName, name: fileName, data: [] }); }
              agrupados.get(fileName)!.data.push(row);
           });
           setFiles(Array.from(agrupados.values()));
@@ -146,10 +149,7 @@ export default function App() {
 
   if (!currentUser) return <LoginScreen bgClass={bgClass} />;
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    setFiles([]);
-  };
+  const handleLogout = async () => { await signOut(auth); setFiles([]); };
 
   return (
     <div className="min-h-screen bg-slate-50 flex overflow-hidden">
@@ -164,28 +164,22 @@ export default function App() {
                   <p className="text-[10px] text-white/80 uppercase tracking-wider truncate">Embu das Artes</p>
                 </div>
               </div>
-              <button onClick={() => setIsSidebarOpen(false)} className="text-white/70 hover:text-white shrink-0 bg-black/10 p-1.5 rounded-lg hover:bg-black/20 transition-colors" title="Recolher Menu">
-                <ChevronLeft className="h-5 w-5" />
-              </button>
+              <button onClick={() => setIsSidebarOpen(false)} className="text-white/70 hover:text-white shrink-0 bg-black/10 p-1.5 rounded-lg hover:bg-black/20 transition-colors" title="Recolher Menu"><ChevronLeft className="h-5 w-5" /></button>
             </>
           ) : (
-            <button onClick={() => setIsSidebarOpen(true)} className="text-white hover:text-white shrink-0 p-2 bg-white/20 rounded-lg shadow-sm transition-colors" title="Expandir Menu">
-              <Menu className="h-6 w-6" />
-            </button>
+            <button onClick={() => setIsSidebarOpen(true)} className="text-white hover:text-white shrink-0 p-2 bg-white/20 rounded-lg shadow-sm transition-colors" title="Expandir Menu"><Menu className="h-6 w-6" /></button>
           )}
         </div>
         
         <div className="p-4 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-thin">
           {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Módulos</p>}
           <button onClick={() => setActiveModule('dashboard')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'dashboard' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Dashboard SIAPS" : ""}>
-            <Layout className="h-5 w-5 shrink-0" />
-            {isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
+            <Layout className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
           </button>
           
           {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
             <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
-              <UploadCloud className="h-5 w-5 shrink-0" />
-              {isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
+              <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
             </button>
           )}
 
@@ -193,16 +187,13 @@ export default function App() {
             <>
               {isSidebarOpen ? ( <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p> ) : ( <div className="h-px bg-slate-800 my-4 mx-2"></div> )}
               <button onClick={() => setActiveModule('users')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'users' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Usuários" : ""}>
-                <Users className="h-5 w-5 shrink-0" />
-                {isSidebarOpen && <span className="whitespace-nowrap">Usuários</span>}
+                <Users className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Usuários</span>}
               </button>
               <button onClick={() => setActiveModule('access')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'access' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Acessos" : ""}>
-                <Shield className="h-5 w-5 shrink-0" />
-                {isSidebarOpen && <span className="whitespace-nowrap">Acessos</span>}
+                <Shield className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Acessos</span>}
               </button>
               <button onClick={() => setActiveModule('settings')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'settings' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Configurações" : ""}>
-                <Settings className="h-5 w-5 shrink-0" />
-                {isSidebarOpen && <span className="whitespace-nowrap">Configurações</span>}
+                <Settings className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Configurações</span>}
               </button>
             </>
           )}
@@ -249,7 +240,6 @@ function LoginScreen({ bgClass }: any) {
     const frm = e.target as any;
     const email = frm.email.value;
     const pass = frm.pass.value;
-
     try {
       if (isRegister) {
         const nome = frm.nome.value;
@@ -543,54 +533,72 @@ function ModuleDashboard({ files, bgClass }: any) {
         return (colIne ? normIne(a[colIne]) : '').localeCompare(colIne ? normIne(b[colIne]) : '');
       });
 
-      const cleanNames = sorted.map((r, idx) => {
+      sorted.forEach((r, idx) => {
         let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
         n = n.replace(/\(\s*0*\d+\s*\)/g, '').trim();
         const ic = colIne ? normIne(r[colIne]) : '';
         if (n && (n.length <= 4 || n.toLowerCase() === 'equipe' || n.toLowerCase() === 'esf' || n.toLowerCase() === 'eap') && ic) n = `${n} (INE ${ic})`;
-        if (n) return n.toUpperCase();
-        return ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`;
-      });
+        
+        let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
 
-      const nCnt: Record<string, number> = {}; cleanNames.forEach(n => nCnt[n] = (nCnt[n] || 0) + 1);
-      const nOcc: Record<string, number> = {};
-
-      sorted.forEach((r, idx) => {
         const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
-        let lbl = cleanNames[idx];
-        if (nCnt[lbl] > 1) { nOcc[lbl] = (nOcc[lbl] || 0) + 1; lbl = `${lbl} (${nOcc[lbl]})`; }
-        enriched.push({ ...r, _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, _teamLabel: lbl, _ubsLabel: ubs });
+        
+        const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
+        const mappedInd = mapIndicatorName(indOrig);
+
+        enriched.push({ 
+          ...r, 
+          _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
+          _teamLabel: lbl, 
+          _ubsLabel: ubs,
+          _mappedIndicator: mappedInd
+        });
       });
     });
     return enriched;
-  }, [rawAllData, colUnidade, colEquipe, colIne]);
+  }, [rawAllData, colUnidade, colEquipe, colIne, colIndicador]);
 
   const [selectedUnidade, setSelectedUnidade] = useState('');
   const [selectedEquipe, setSelectedEquipe] = useState('');
   const [selectedMes, setSelectedMes] = useState('');
   const [selectedIndicador, setSelectedIndicador] = useState('');
-  const [selectedVariavel, setSelectedVariavel] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
+
+  const optI = useMemo(() => {
+    return Array.from(new Set(allData.map(d => String(d._mappedIndicator || ''))))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.toLowerCase().includes('vinculo') || a.toLowerCase().includes('vínculo')) return -1;
+        if (b.toLowerCase().includes('vinculo') || b.toLowerCase().includes('vínculo')) return 1;
+        return a.localeCompare(b);
+      });
+  }, [allData]);
+
+  useEffect(() => {
+    if (!selectedIndicador && optI.length > 0) {
+      setSelectedIndicador(optI[0]);
+    }
+  }, [optI, selectedIndicador]);
 
   const filteredData = useMemo(() => {
     let result = allData;
     if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
     if (selectedMes) result = result.filter(d => String(d[colMes]) === selectedMes);
-    if (selectedIndicador) result = result.filter(d => String(d[colIndicador]) === selectedIndicador);
+    if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
     if (searchTerm) { const st = searchTerm.toLowerCase(); result = result.filter(row => columns.some(col => String(row[col] || '').toLowerCase().includes(st))); }
     return result;
-  }, [allData, columns, selectedUnidade, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes, colIndicador]);
+  }, [allData, columns, selectedUnidade, selectedEquipe, selectedMes, selectedIndicador, searchTerm, colMes]);
 
   const filteredDataForTrend = useMemo(() => {
     let result = allData;
     if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
     if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
-    if (selectedIndicador) result = result.filter(d => String(d[colIndicador]) === selectedIndicador);
+    if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
     return result;
-  }, [allData, selectedUnidade, selectedEquipe, selectedIndicador, colIndicador]);
+  }, [allData, selectedUnidade, selectedEquipe, selectedIndicador]);
 
   const variableColumns = useMemo(() => {
     const sampleRows = filteredData.length > 0 ? filteredData : allData;
@@ -606,10 +614,31 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [columns, filteredData, allData, colUnidade, colEquipe, colIne, colMes]);
 
   const activeVariable = useMemo(() => {
-    if (selectedVariavel && variableColumns.includes(selectedVariavel)) return selectedVariavel;
-    const scoreCol = variableColumns.find(c => ['nota', 'pontua', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().includes(w)));
+    if (!variableColumns.length) return '';
+    
+    if (!selectedIndicador) {
+      const scoreCol = variableColumns.find(c => ['nota', 'pontua', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
+      return scoreCol || variableColumns[variableColumns.length - 1] || '';
+    }
+
+    const indL = selectedIndicador.toLowerCase();
+    
+    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+       const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao entre'));
+       if (v) return v;
+    }
+    
+    if (indL.includes('c7')) {
+       const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio') || c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('boa pratica'));
+       if (v) return v;
+    }
+    
+    const pt = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
+    if (pt) return pt;
+
+    const scoreCol = variableColumns.find(c => ['nota', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
     return scoreCol || variableColumns[variableColumns.length - 1] || '';
-  }, [selectedVariavel, variableColumns]);
+  }, [selectedIndicador, variableColumns]);
 
   const consolidatedTeams = useMemo(() => {
     if (filteredData.length === 0) return [];
@@ -674,7 +703,6 @@ function ModuleDashboard({ files, bgClass }: any) {
   const optM = Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99));
   const optU = Array.from(new Set(allData.map(d => String(d._ubsLabel || '')))).filter(Boolean).sort();
   const optE = Array.from(new Set(allData.filter(d => !selectedUnidade || d._ubsLabel === selectedUnidade).map(d => String(d._teamLabel || '')))).filter(Boolean).sort();
-  const optI = Array.from(new Set(allData.map(d => String(d[colIndicador] || '')))).filter(Boolean).sort();
 
   const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Suficiente': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
@@ -739,8 +767,16 @@ function ModuleDashboard({ files, bgClass }: any) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">📅 Todos os Meses</option>{optM.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <select value={selectedIndicador} onChange={e => { setSelectedIndicador(e.target.value); setSelectedVariavel(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">📊 Todos os Indicadores</option>{optI.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <select value={activeVariable} onChange={e => setSelectedVariavel(e.target.value)} className="w-full p-2 border border-blue-300 rounded-lg text-sm bg-blue-50/60 font-medium text-blue-950">{!variableColumns.length && <option value="">Sem numéricas</option>}{variableColumns.map(c => <option key={c} value={c}>📈 Variável: {c}</option>)}</select>
+          
+          <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optI.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          
+          <div className="w-full px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-blue-50/60 text-blue-950 flex flex-col justify-center overflow-hidden h-[42px]">
+            <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-none mb-0.5">Variável Automática Selecionada</span>
+            <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
+          </div>
+
           <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <div className="relative w-full"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" /><input type="text" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" /></div>
@@ -757,10 +793,10 @@ function ModuleDashboard({ files, bgClass }: any) {
 
       {variablesChartData.length > 0 && (
         <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div><span className="text-xs text-slate-500">Clique para focar</span></div>
+          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {variablesChartData.map((v, i) => (
-              <div key={i} onClick={() => setSelectedVariavel(v.fullName)} className={`p-3 rounded-lg border cursor-pointer transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100'}`}>
+              <div key={i} className={`p-3 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
                 <p className="text-[11px] text-slate-600 font-medium line-clamp-2 leading-tight" title={v.fullName}>{v.fullName}</p>
                 <p className="text-lg font-bold text-slate-900 mt-1.5">{formatVal(v.valor)}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
