@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft } from 'lucide-react';
+import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft, Trophy } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -31,6 +31,67 @@ const secondaryAuth = getAuth(secondaryApp);
 // --- TIPAGENS ---
 interface ImportedFile { id: string; name: string; lastModified?: number; data: any[]; }
 interface User { id: string; email: string; role: string; name: string; }
+
+// --- ESCUDO ANTI ECRÃ BRANCO (ERROR BOUNDARY) ---
+class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null, isClearing: boolean }> {
+  constructor(props: any) { 
+    super(props); 
+    this.state = { hasError: false, error: null, isClearing: false }; 
+  }
+  
+  static getDerivedStateFromError(error: Error) { 
+    return { hasError: true, error }; 
+  }
+
+  handleEmergencyClear = async () => {
+    this.setState({ isClearing: true });
+    try {
+      const qs = await getDocs(collection(db, 'dados_siaps'));
+      let batch = writeBatch(db);
+      let opCount = 0;
+      for(let i = 0; i < qs.docs.length; i++) {
+         batch.delete(qs.docs[i].ref);
+         opCount++;
+         if(opCount >= 400 || i === qs.docs.length - 1) { 
+            await batch.commit(); 
+            batch = writeBatch(db); 
+            opCount = 0; 
+         }
+      }
+      window.location.reload();
+    } catch(e) { 
+      alert('Erro ao apagar nuvem. Verifique a sua ligação.'); 
+      this.setState({ isClearing: false }); 
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 p-6">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full text-center border-t-4 border-red-500">
+            <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Modo de Segurança Ativado</h2>
+            <p className="text-sm text-slate-600 mb-6">O painel encontrou dados corrompidos e desligou a interface para evitar falhas. Utilize o botão abaixo para limpar a base de dados e recomeçar.</p>
+            
+            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">
+              {this.state.error?.toString()}
+            </div>
+
+            <button 
+              onClick={this.handleEmergencyClear} 
+              disabled={this.state.isClearing}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30"
+            >
+              {this.state.isClearing ? 'A Limpar a Nuvem...' : <><Trash2 className="mr-2 h-5 w-5"/> Forçar Limpeza da Nuvem</>}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // --- UTILITÁRIOS MATEMÁTICOS & PADRONIZAÇÃO ---
 const monthOrder: Record<string, number> = { 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6, 'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12 };
@@ -75,11 +136,11 @@ const calcStatus = (v: number | null, ind: string): string | null => {
   return 'Ótimo';
 };
 
-const extMes = (f: string) => { const u = f.toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return f.split('-')[0].replace(/[0-9]/g, '').trim() || f; };
-const extInd = (f: string) => f.split('-').length > 1 ? f.split('-').slice(1).join('-').trim() : f.trim();
+const extMes = (f: string) => { const u = String(f || '').toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return String(f || '').split('-')[0].replace(/[0-9]/g, '').trim() || String(f || ''); };
+const extInd = (f: string) => String(f || '').split('-').length > 1 ? String(f || '').split('-').slice(1).join('-').trim() : String(f || '').trim();
 
 const mapIndicatorName = (name: string) => {
-  const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const n = String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if(n.includes('acesso')) return 'C1 - Mais Acesso';
   if(n.includes('infantil')) return 'C2 - Desenvolvimento Infantil';
   if(n.includes('gesta') || n.includes('puerp')) return 'C3 - Cuidado na gestação e Puerpério';
@@ -88,44 +149,61 @@ const mapIndicatorName = (name: string) => {
   if(n.includes('idos')) return 'C6 - Idosos';
   if(n.includes('cancer') || n.includes('feminino') || n.includes('colo')) return 'C7 - Prevenção cancer feminino';
   if(n.includes('vinculo') || n.includes('territorial')) return 'Vínculo e Acompanhamento Territorial';
-  return name.toUpperCase();
+  return String(name || '').toUpperCase();
 };
 
+// ==========================================
+// MOTOR DE LEITURA INFALÍVEL
+// ==========================================
 const buildRows = (rows: any[][]) => {
-  let hIdx = rows.findIndex(r => {
-    const j = r.join(' ').toUpperCase();
-    return j.includes('CNES') || j.includes('INE') || j.includes('EQUIPE') || j.includes('UNIDADE') || j.includes('ESTABELECIMENTO');
+  if (!rows || !Array.isArray(rows)) return [];
+  const validRows = rows.filter(r => Array.isArray(r) && r.length > 0);
+  if (validRows.length === 0) return [];
+
+  let hIdx = -1;
+  // Rigor Absoluto: Procura a linha que contém EXATAMENTE a palavra 'CNES', 'ESTABELECIMENTO' ou 'INE'
+  for (let i = 0; i < validRows.length; i++) {
+    const rowStr = validRows[i].map(c => String(c || '').replace(/\r?\n|\r/g, ' ').trim().toUpperCase());
+    if (rowStr.some(c => c === 'CNES' || c === 'ESTABELECIMENTO' || c === 'INE' || c === 'NOME DA EQUIPE' || c === 'EQUIPE')) {
+      hIdx = i;
+      break;
+    }
+  }
+
+  if (hIdx === -1) return [];
+
+  const rawHeaders = validRows[hIdx] || [];
+  const seen = new Set<string>();
+  const headers = rawHeaders.map((c, i) => {
+    let val = String(c || '').replace(/\r?\n|\r/g, ' ').trim();
+    if (!val) val = `EMPTY_${i}`;
+    let base = val; let count = 1;
+    while (seen.has(base)) { base = `${val} (${count})`; count++; }
+    seen.add(base);
+    return base;
   });
-  if (hIdx === -1) {
-    let maxCols = 0;
-    rows.forEach((r, i) => { const cols = r.filter(c => String(c).trim() !== '').length; if (cols > maxCols) { maxCols = cols; hIdx = i; } });
-  }
 
-  const h1 = rows[hIdx] || [], h2 = rows[hIdx + 1] || [];
-  const isSub = h2.length > 0 && h2.some(c => { const s = String(c).toUpperCase(); return s === 'CÓDIGO' || s === 'CODIGO' || s === 'NOME' || s.includes('INE'); }) && !h2.join(' ').toUpperCase().includes('TOTAL');
-  
-  const headers: string[] = [];
-  for (let c = 0; c < Math.max(h1.length, isSub ? h2.length : 0); c++) {
-    const v1 = String(h1[c] || '').trim(), v2 = isSub ? String(h2[c] || '').trim() : '';
-    let ch = (v2 && v2.toUpperCase() !== v1.toUpperCase()) ? (v1.length <= 15 && ['NOME', 'CÓDIGO', 'CODIGO', 'INE'].includes(v2.toUpperCase()) ? `${v1} - ${v2}` : v2) : v1;
-    if (!ch && v1) ch = v1;
-    headers.push(headers.includes(ch) && ch ? `${ch} (${c + 1})` : ch);
-  }
-
-  return rows.slice(isSub ? hIdx + 2 : hIdx + 1).filter(r => {
-    const f = r.slice(0, 4).join(' ').toUpperCase();
-    return f && !f.includes('TOTAL') && !f.includes('FONTE:') && !f.includes('LEGENDA');
+  return validRows.slice(hIdx + 1).filter(r => {
+    const firstCells = r.slice(0, 4).join(' ').toUpperCase();
+    if (!firstCells.trim()) return false;
+    if (firstCells.includes('TOTAL') || firstCells.includes('FONTE:') || firstCells.includes('LEGENDA')) return false;
+    return true;
   }).map(r => {
-    const obj: any = {}; let has = false;
-    headers.forEach((col, c) => { if (col && !col.toUpperCase().includes('EMPTY')) { obj[col] = r[c] ?? ''; if (String(obj[col]).trim() !== '') has = true; } });
-    return has ? obj : null;
+    const obj: any = {}; let hasData = false;
+    headers.forEach((col, c) => { 
+      if (!col.startsWith('EMPTY_')) { 
+        obj[col] = r[c] ?? ''; 
+        if (String(obj[col]).trim() !== '') hasData = true; 
+      } 
+    });
+    return hasData ? obj : null;
   }).filter(Boolean);
 };
 
 // ==========================================
-// APLICAÇÃO PRINCIPAL (FRONT-END)
+// APLICAÇÃO ENCAPSULADA (Para proteger de Crashes)
 // ==========================================
-export default function App() {
+function MainApp() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState('dashboard');
@@ -206,6 +284,10 @@ export default function App() {
             <Layout className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
           </button>
           
+          <button onClick={() => setActiveModule('ranking')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'ranking' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Ranking" : ""}>
+            <Trophy className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Ranking</span>}
+          </button>
+
           {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
             <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
               <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
@@ -232,22 +314,23 @@ export default function App() {
           {isSidebarOpen ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3 overflow-hidden">
-                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>{currentUser.name.charAt(0)}</div>
-                <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p><p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p></div>
+                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser?.name || 'User'}>{(currentUser?.name || 'U').charAt(0).toUpperCase()}</div>
+                <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser?.name || 'Usuário'}</p><p className="text-[10px] text-slate-500 truncate">{currentUser?.role || 'Acesso'}</p></div>
               </div>
               <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
             </div>
           ) : (
             <div className="flex flex-col items-center space-y-4">
-              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>{currentUser.name.charAt(0)}</div>
+              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser?.name || 'User'}>{(currentUser?.name || 'U').charAt(0).toUpperCase()}</div>
               <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
             </div>
           )}
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
         {activeModule === 'dashboard' && <ModuleDashboard files={files} bgClass={bgClass} />}
+        {activeModule === 'ranking' && <ModuleRanking files={files} bgClass={bgClass} />}
         {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
         {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} bgClass={bgClass} />}
         {activeModule === 'access' && <ModuleAccess bgClass={bgClass} />}
@@ -257,6 +340,18 @@ export default function App() {
   );
 }
 
+// O App real é exportado envolvido no ErrorBoundary para proteção total
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
+
+// ==========================================
+// TELA DE LOGIN & RECUPERAÇÃO DE SENHA
+// ==========================================
 function LoginScreen({ bgClass }: any) {
   const [isRegister, setIsRegister] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
@@ -338,78 +433,99 @@ function LoginScreen({ bgClass }: any) {
   );
 }
 
+// ==========================================
+// MÓDULO DE IMPORTAÇÃO
+// ==========================================
 function ModuleImport({ files, setFiles, bgClass }: any) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
-    if (selectedFiles.length === 0) return;
-    setIsProcessing(true);
-    const newFiles: ImportedFile[] = [];
+    try {
+      const selectedFiles = Array.from(event.target.files || []);
+      if (selectedFiles.length === 0) return;
+      setIsProcessing(true);
+      const newFiles: ImportedFile[] = [];
+      let skippedFiles = [];
 
-    for (const file of selectedFiles) {
-      if (file.name.startsWith('~$') || file.name.startsWith('.')) continue;
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      if (!['csv', 'xlsx', 'xls'].includes(ext || '')) continue;
-      
-      setProgressMsg(`Lendo ${file.name}...`);
-      const fileData = await new Promise<any[]>((resolve) => {
-        if (ext === 'csv') {
-          Papa.parse(file, { header: false, skipEmptyLines: true, complete: (res) => resolve(buildRows(res.data as any[][])) });
-        } else {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            try {
-              const wb = XLSX.read(e.target?.result, { type: 'binary' });
-              resolve(buildRows(XLSX.utils.sheet_to_json<any[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })));
-            } catch { resolve([]); }
-          };
-          reader.readAsBinaryString(file);
-        }
-      });
-
-      if (fileData.length > 0) {
-        const cleanName = file.name.replace(/\.[^/.]+$/, "");
-        const properMonth = extMes(cleanName);
-        const properIndicator = extInd(cleanName);
-        const enrichedData = fileData.map(r => ({ ...r, _arquivoOrigem: cleanName, _mesOrigem: properMonth, _indicadorOrigem: properIndicator }));
-        newFiles.push({ id: Date.now() + '-' + Math.random().toString(36).substring(2,7), name: file.name, data: enrichedData });
+      for (const file of selectedFiles) {
+        if (file.name.startsWith('~$') || file.name.startsWith('.')) continue;
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (!['csv', 'xlsx', 'xls'].includes(ext || '')) continue;
         
-        setProgressMsg(`Salvando ${file.name} na Nuvem...`);
-        try {
-          let batch = writeBatch(db);
-          let opCount = 0;
-          for (let i = 0; i < enrichedData.length; i++) {
-             const row = enrichedData[i];
-             const rowId = `${cleanName}_${i}_${Date.now()}`;
-             const docRef = doc(db, 'dados_siaps', rowId);
-             batch.set(docRef, row);
-             opCount++;
-             if (opCount >= 400 || i === enrichedData.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
+        setProgressMsg(`A Processar ${file.name}...`);
+        const fileData = await new Promise<any[]>((resolve) => {
+          if (ext === 'csv') {
+            Papa.parse(file, { header: false, skipEmptyLines: true, complete: (res) => resolve(buildRows(res.data as any[][])) });
+          } else {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              try {
+                const wb = XLSX.read(e.target?.result, { type: 'binary' });
+                resolve(buildRows(XLSX.utils.sheet_to_json<any[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })));
+              } catch { resolve([]); }
+            };
+            reader.readAsBinaryString(file);
           }
-        } catch (err: any) { alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`); }
-      }
-    }
+        });
 
-    setFiles((prev: ImportedFile[]) => {
-      const map = new Map<string, ImportedFile>();
-      prev.forEach(f => map.set(f.name, f));
-      newFiles.forEach(f => map.set(f.name, f));
-      return Array.from(map.values());
-    });
-    
-    setIsProcessing(false);
-    setProgressMsg('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    alert('Upload concluído! Dados salvos e disponíveis para todos.');
+        if (fileData && fileData.length > 0) {
+          const cleanName = file.name.replace(/\.[^/.]+$/, "");
+          const properMonth = extMes(cleanName);
+          const properIndicator = extInd(cleanName);
+          const enrichedData = fileData.map(r => ({ ...r, _arquivoOrigem: cleanName, _mesOrigem: properMonth, _indicadorOrigem: properIndicator }));
+          newFiles.push({ id: Date.now() + '-' + Math.random().toString(36).substring(2,7), name: file.name, data: enrichedData });
+          
+          setProgressMsg(`A Enviar ${file.name} para a Nuvem...`);
+          try {
+            let batch = writeBatch(db);
+            let opCount = 0;
+            for (let i = 0; i < enrichedData.length; i++) {
+               const row = enrichedData[i];
+               const rowId = `${cleanName}_${i}_${Date.now()}`;
+               const docRef = doc(db, 'dados_siaps', rowId);
+               batch.set(docRef, row);
+               opCount++;
+               if (opCount >= 400 || i === enrichedData.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
+            }
+          } catch (err: any) { alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`); }
+        } else {
+          skippedFiles.push(file.name);
+        }
+      }
+
+      if (newFiles.length > 0) {
+        setFiles((prev: ImportedFile[]) => {
+          const map = new Map<string, ImportedFile>();
+          (prev || []).forEach(f => map.set(f.name, f));
+          newFiles.forEach(f => map.set(f.name, f));
+          return Array.from(map.values());
+        });
+        
+        if (skippedFiles.length > 0) {
+          alert(`Upload parcial. Os seguintes ficheiros falharam pois não foi encontrado o cabeçalho "CNES": \n${skippedFiles.join('\n')}`);
+        } else {
+          alert('Upload concluído com sucesso!');
+        }
+      } else if (skippedFiles.length > 0) {
+         alert(`NENHUM arquivo foi importado. Não foi encontrado o cabeçalho "CNES" nas planilhas: \n${skippedFiles.join('\n')}`);
+      }
+
+    } catch (error) {
+      console.error("Erro crítico na importação:", error);
+      alert("Ocorreu um erro crítico ao processar o arquivo. Verifique se a planilha é válida.");
+    } finally {
+      setIsProcessing(false);
+      setProgressMsg('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleClearCloud = async () => {
     if(!window.confirm('CUIDADO: Isso apagará TODOS os relatórios do banco de dados na nuvem! Tem certeza?')) return;
     setIsProcessing(true);
-    setProgressMsg('Apagando nuvem...');
+    setProgressMsg('A Apagar a Nuvem...');
     try {
       const qs = await getDocs(collection(db, 'dados_siaps'));
       let batch = writeBatch(db);
@@ -420,7 +536,7 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
          if(opCount >= 400 || i === qs.docs.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
       }
       setFiles([]);
-    } catch(e) { alert('Erro ao apagar. Verifique regras do Firestore.'); }
+    } catch(e) { alert('Erro ao apagar. Verifique as regras do Firestore.'); }
     setIsProcessing(false);
     setProgressMsg('');
   };
@@ -434,20 +550,20 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
         {isProcessing && <p className="text-blue-600 font-bold mb-4 animate-pulse">{progressMsg}</p>}
         <div className="flex justify-center gap-4">
           <label className={`cursor-pointer inline-flex items-center px-6 py-3 rounded-lg text-white font-bold shadow-md transition-all hover:opacity-90 ${bgClass}`}>
-            <FolderOpen className="h-5 w-5 mr-2"/> {isProcessing ? 'Processando...' : 'Selecionar e Enviar para Nuvem'}
+            <FolderOpen className="h-5 w-5 mr-2"/> {isProcessing ? 'A Processar...' : 'Selecionar e Enviar para Nuvem'}
             <input type="file" multiple accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} disabled={isProcessing} ref={fileInputRef} />
           </label>
         </div>
       </div>
 
-      {files.length > 0 && (
+      {files && files.length > 0 && (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-bold text-slate-800">Planilhas Hospedadas ({files.length})</h3>
             <button onClick={handleClearCloud} disabled={isProcessing} className="text-red-500 text-sm hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center"><Trash2 className="h-4 w-4 mr-1"/> Apagar TUDO da Nuvem</button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {files.map((f: ImportedFile) => (<div key={f.id} className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 flex items-center"><FileText className="h-3.5 w-3.5 mr-1.5 text-blue-500"/>{f.name}</div>))}
+            {files.map((f: ImportedFile) => (<div key={f.id || Math.random()} className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 flex items-center"><FileText className="h-3.5 w-3.5 mr-1.5 text-blue-500"/>{f.name || 'Arquivo sem nome'}</div>))}
           </div>
         </div>
       )}
@@ -524,73 +640,379 @@ function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
   );
 }
 
-function ModuleDashboard({ files, bgClass }: any) {
+// ==========================================
+// MÓDULO: RANKING GERAL
+// ==========================================
+function ModuleRanking({ files, bgClass }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
-  const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => !c.startsWith('_') && !c.toUpperCase().includes('EMPTY') && c.trim() !== ''), [rawAllData]);
+  const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
   const colUnidade = useMemo(() => {
-    const blocks = ['tipo', 'nota'];
-    const c = columns.slice(0, 15).filter(col => !blocks.some(w => col.toLowerCase().includes(w)));
-    return c.find(x => x.toLowerCase().includes('estabeleci')) || c.find(x => x.toLowerCase().includes('unidade')) || c.find(x => x.toLowerCase().includes('ubs')) || null;
+    const blocks = ['tipo', 'nota', 'condição', 'sigla', 'ine', 'cnes'];
+    const c = columns.slice(0, 15).filter(col => !blocks.some(w => String(col).toLowerCase().includes(w)));
+    return c.find(x => String(x).toLowerCase().includes('estabeleci')) || c.find(x => String(x).toLowerCase().includes('unidade')) || c.find(x => String(x).toLowerCase().includes('ubs')) || null;
   }, [columns]);
 
-  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(c.toLowerCase().trim()) || c.toLowerCase().endsWith(' ine')) || null, [columns]);
+  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(String(c).toLowerCase().trim()) || String(c).toLowerCase().endsWith(' ine')) || null, [columns]);
+
+  const colTipoEquipe = useMemo(() => {
+    return columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo de equipe') || (String(c).toLowerCase().includes('tipo') && String(c).toLowerCase().includes('equipe'))) || columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo')) || null;
+  }, [columns]);
 
   const colEquipe = useMemo(() => {
-    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho'];
-    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && !blocks.some(w => c.toLowerCase().includes(w)));
-    return candidates.find(c => c.toLowerCase().includes('nome da equipe')) || candidates.find(c => c.toLowerCase().includes('equipe')) || candidates.find(c => c.toLowerCase().includes('nome')) || candidates[0] || null;
-  }, [columns, colUnidade, colIne]);
+    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho', 'condição', 'sigla'];
+    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && c !== colTipoEquipe && !blocks.some(w => String(c).toLowerCase().includes(w)));
+    return candidates.find(c => String(c).toLowerCase().includes('nome da equipe')) || candidates.find(c => String(c).toLowerCase().includes('equipe')) || candidates.find(c => String(c).toLowerCase().includes('nome')) || null;
+  }, [columns, colUnidade, colIne, colTipoEquipe]);
 
   const colMes = '_mesOrigem';
-  const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(c.toLowerCase())) || '_indicadorOrigem', [columns]);
+  const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(String(c).toLowerCase())) || '_indicadorOrigem', [columns]);
 
   const allData = useMemo(() => {
-    const groups = new Map<string, any[]>();
-    rawAllData.forEach(row => {
-      const ubsKey = colUnidade ? normTxt(row[colUnidade]) : 'UBS';
-      const gKey = `${row._arquivoOrigem || 'ARQ'}__${ubsKey}`;
-      if (!groups.has(gKey)) groups.set(gKey, []);
-      groups.get(gKey)!.push(row);
-    });
-
     const enriched: any[] = [];
-    groups.forEach(rows => {
-      const sorted = [...rows].sort((a, b) => {
-        const eqA = colEquipe ? normTxt(a[colEquipe]) : '';
-        const eqB = colEquipe ? normTxt(b[colEquipe]) : '';
-        if (eqA !== eqB) return eqA.localeCompare(eqB);
-        return (colIne ? normIne(a[colIne]) : '').localeCompare(colIne ? normIne(b[colIne]) : '');
-      });
+    rawAllData.forEach((r, idx) => {
+      let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
+      const ic = colIne ? normIne(r[colIne]) : '';
+      let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
+      const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
+      
+      let tipoStr = 'Outros';
+      if (colTipoEquipe && r[colTipoEquipe]) {
+          tipoStr = String(r[colTipoEquipe]).toUpperCase().trim();
+      } else {
+          const lblTest = lbl.toUpperCase();
+          if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
+          else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
+      }
 
-      sorted.forEach((r, idx) => {
-        let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
-        
-        const ic = colIne ? normIne(r[colIne]) : '';
-        let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
-        
-        const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
-        
-        let tipoStr = 'Outros';
-        const lblTest = lbl.toUpperCase();
-        if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
-        else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
+      const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
+      const mappedInd = mapIndicatorName(indOrig);
 
-        const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
-        const mappedInd = mapIndicatorName(indOrig);
-
-        enriched.push({ 
-          ...r, 
-          _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
-          _teamLabel: lbl, 
-          _ubsLabel: ubs,
-          _tipoEquipe: tipoStr,
-          _mappedIndicator: mappedInd
-        });
+      enriched.push({ 
+        ...r, 
+        _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
+        _teamLabel: lbl, 
+        _ubsLabel: ubs,
+        _tipoEquipe: tipoStr,
+        _mappedIndicator: mappedInd
       });
     });
     return enriched;
-  }, [rawAllData, colUnidade, colEquipe, colIne, colIndicador]);
+  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador]);
+
+  const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
+  const optI = useMemo(() => {
+    return Array.from(new Set(allData.map(d => String(d._mappedIndicator || ''))))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.toLowerCase().includes('vinculo') || a.toLowerCase().includes('vínculo')) return -1;
+        if (b.toLowerCase().includes('vinculo') || b.toLowerCase().includes('vínculo')) return 1;
+        return a.localeCompare(b);
+      });
+  }, [allData]);
+  
+  const [selectedMes, setSelectedMes] = useState('');
+  const [sortConfigInd, setSortConfigInd] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+  useEffect(() => {
+    if (!selectedMes && optM.length > 0) {
+      setSelectedMes(optM[optM.length - 1]);
+    }
+  }, [optM, selectedMes]);
+
+  const filteredData = useMemo(() => {
+    return allData.filter(d => String(d[colMes]) === selectedMes);
+  }, [allData, selectedMes, colMes]);
+
+  const variableColumns = useMemo(() => {
+    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição'];
+    return columns.filter(col => {
+      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
+      const lower = String(col).toLowerCase().trim();
+      if (blocks.some(w => lower.includes(w))) return false;
+      if ((lower.includes('código') || lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
+      return allData.slice(0, 30).some(r => parseNum(r[col]) !== null);
+    });
+  }, [columns, allData, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
+
+  const getActiveVarForIndicator = (ind: string) => {
+    const indL = String(ind || '').toLowerCase();
+    let found;
+    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+       found = columns.find(c => String(c).toUpperCase().trim() === 'RAZÃO ENTRE NUMERADOR E DENOMINADOR' || String(c).toUpperCase().trim() === 'RAZÃO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao'));
+    } else if (indL.includes('c7')) {
+       found = columns.find(c => String(c).toUpperCase().trim() === 'SOMATÓRIO DA BOA PRÁTICA' || String(c).toUpperCase().trim() === 'SOMATÓRIO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio'));
+    } else {
+       found = columns.find(c => String(c).toUpperCase().trim() === 'PONTUAÇÃO' || String(c).toUpperCase().trim() === 'PONTUACAO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
+    }
+    if (!found) {
+       found = columns.find(c => ['NOTA', 'RESULTADO', 'TOTAL'].includes(String(c).toUpperCase().trim()));
+    }
+    return found ? String(found) : '';
+  };
+
+  const getStatusForRow = (row: any, ind: string) => {
+    const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
+    const statusCol = rowKeys.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
+    if (statusCol) {
+      const st = normStat(row[statusCol]);
+      if (st) return st;
+    }
+    const vCol = getActiveVarForIndicator(ind);
+    if (vCol) return calcStatus(parseNum(row[String(vCol)]), ind);
+    return null;
+  };
+
+  const { ubsRanking, indRanking } = useMemo(() => {
+    const ubsScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
+    const indScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
+
+    optI.forEach(ind => {
+      indScores.set(ind, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Satisfatório':0, 'Regular':0} });
+    });
+
+    filteredData.forEach(row => {
+      const ind = row._mappedIndicator;
+      const st = getStatusForRow(row, ind);
+
+      if (st && S_WEIGHTS[st]) {
+        const w = S_WEIGHTS[st];
+        const ubs = row._ubsLabel;
+
+        if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL') {
+            if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Satisfatório':0, 'Regular':0} });
+            ubsScores.get(ubs)!.sum += w;
+            ubsScores.get(ubs)!.count++;
+            ubsScores.get(ubs)!.statusCounts[st]++;
+        }
+
+        if (indScores.has(ind)) {
+           indScores.get(ind)!.sum += w;
+           indScores.get(ind)!.count++;
+           indScores.get(ind)!.statusCounts[st]++;
+        }
+      }
+    });
+
+    const sortScores = (map: Map<string, any>) => Array.from(map.entries()).map(([name, data]) => ({ name, avg: data.count > 0 ? data.sum / data.count : 0, ...data.statusCounts })).sort((a, b) => b.avg - a.avg);
+
+    return { ubsRanking: sortScores(ubsScores), indRanking: sortScores(indScores) };
+  }, [filteredData, optI]);
+
+  const top10UBS = ubsRanking.slice(0, 10);
+  const bottom10UBS = [...ubsRanking].reverse().slice(0, 10);
+
+  const requestSortInd = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfigInd && sortConfigInd.key === key && sortConfigInd.direction === 'asc') direction = 'desc';
+    setSortConfigInd({ key, direction });
+  };
+
+  const sortedIndRanking = useMemo(() => {
+    let sortableData = [...indRanking];
+    if (sortConfigInd !== null) {
+      sortableData.sort((a: any, b: any) => {
+        const valA = a[sortConfigInd.key];
+        const valB = b[sortConfigInd.key];
+        if (valA < valB) return sortConfigInd.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfigInd.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableData;
+  }, [indRanking, sortConfigInd]);
+
+  if (files.length === 0) return (
+    <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
+      <Trophy className="h-20 w-20 mb-4 opacity-20"/>
+      <h2 className="text-xl font-medium text-slate-600">Nenhum dado para gerar Ranking.</h2>
+      <p className="mt-2 text-sm">Importe as planilhas primeiro.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center text-lg font-bold text-slate-800">
+          <div className={`p-2 rounded-lg mr-3 ${bgClass} bg-opacity-10`}><Trophy className={`h-6 w-6 text-blue-600`} /></div>
+          Ranking de Desempenho Global
+        </div>
+        <div className="w-full sm:w-64">
+          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white font-medium shadow-sm">
+            {optM.map(o => <option key={o} value={o}>🏆 Mês: {o}</option>)}
+          </select>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-blue-50 p-4 border-b border-blue-100 flex items-center">
+             <Award className="h-5 w-5 text-blue-600 mr-2" />
+             <h3 className="font-bold text-blue-900">TOP 10 Melhores UBS</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+             {top10UBS.map((ubs, i) => (
+               <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
+                 <div className="flex items-center space-x-4">
+                   <span className={`font-black text-lg w-6 text-center ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-slate-300'}`}>#{i + 1}</span>
+                   <div>
+                     <p className="font-bold text-slate-800 text-sm leading-tight mb-1">{ubs.name}</p>
+                     <div className="flex space-x-1.5">
+                       {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
+                       {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
+                       {ubs['Satisfatório'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Satisfatório']} Sat.</span>}
+                       {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
+                     </div>
+                   </div>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-sm font-bold text-blue-700">{ubs.avg.toFixed(2)}</p>
+                   <p className="text-[9px] text-slate-400 uppercase font-semibold">Média</p>
+                 </div>
+               </div>
+             ))}
+             {top10UBS.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-red-50 p-4 border-b border-red-100 flex items-center">
+             <AlertOctagon className="h-5 w-5 text-red-600 mr-2" />
+             <h3 className="font-bold text-red-900">TOP 10 Piores UBS</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+             {bottom10UBS.map((ubs, i) => (
+               <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
+                 <div className="flex items-center space-x-4">
+                   <span className="font-black text-lg w-6 text-center text-red-300">!</span>
+                   <div>
+                     <p className="font-bold text-slate-800 text-sm leading-tight mb-1">{ubs.name}</p>
+                     <div className="flex space-x-1.5">
+                       {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
+                       {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
+                       {ubs['Satisfatório'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Satisfatório']} Sat.</span>}
+                       {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
+                     </div>
+                   </div>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-sm font-bold text-red-600">{ubs.avg.toFixed(2)}</p>
+                   <p className="text-[9px] text-slate-400 uppercase font-semibold">Média</p>
+                 </div>
+               </div>
+             ))}
+             {bottom10UBS.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
+          </div>
+        </div>
+      </div>
+
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center">
+           <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
+           <h3 className="font-bold text-slate-800">Ranking de Indicadores (Total de Avaliações)</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left whitespace-nowrap">
+            <thead className="text-slate-700 bg-slate-100 border-b border-slate-200">
+              <tr>
+                <th onClick={() => requestSortInd('name')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center">Indicador {sortConfigInd?.key === 'name' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1 text-blue-600" /> : <ChevronDown className="h-4 w-4 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div>
+                </th>
+                <th onClick={() => requestSortInd('Ótimo')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center text-blue-700">Ótimo {sortConfigInd?.key === 'Ótimo' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
+                </th>
+                <th onClick={() => requestSortInd('Bom')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center text-emerald-700">Bom {sortConfigInd?.key === 'Bom' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
+                </th>
+                <th onClick={() => requestSortInd('Satisfatório')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center text-amber-700">Satisfatório {sortConfigInd?.key === 'Satisfatório' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
+                </th>
+                <th onClick={() => requestSortInd('Regular')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center text-red-700">Regular {sortConfigInd?.key === 'Regular' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sortedIndRanking.map((ind, i) => (
+                <tr key={i} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3.5 font-semibold text-slate-800">{ind.name}</td>
+                  <td className="px-5 py-3.5 font-bold text-blue-600 bg-blue-50/30">{ind['Ótimo']}</td>
+                  <td className="px-5 py-3.5 font-bold text-emerald-600 bg-emerald-50/30">{ind['Bom']}</td>
+                  <td className="px-5 py-3.5 font-bold text-amber-600 bg-amber-50/30">{ind['Satisfatório']}</td>
+                  <td className="px-5 py-3.5 font-bold text-red-600 bg-red-50/30">{ind['Regular']}</td>
+                </tr>
+              ))}
+              {sortedIndRanking.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400">Sem dados para este mês.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ==========================================
+// MÓDULO DE DASHBOARD PRINCIPAL
+// ==========================================
+function ModuleDashboard({ files, bgClass }: any) {
+  const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
+  const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
+
+  const colUnidade = useMemo(() => {
+    const blocks = ['tipo', 'nota', 'condição', 'sigla', 'ine', 'cnes'];
+    const c = columns.slice(0, 15).filter(col => !blocks.some(w => String(col).toLowerCase().includes(w)));
+    return c.find(x => String(x).toLowerCase().includes('estabeleci')) || c.find(x => String(x).toLowerCase().includes('unidade')) || c.find(x => String(x).toLowerCase().includes('ubs')) || null;
+  }, [columns]);
+
+  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(String(c).toLowerCase().trim()) || String(c).toLowerCase().endsWith(' ine')) || null, [columns]);
+
+  const colTipoEquipe = useMemo(() => {
+    return columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo de equipe') || (String(c).toLowerCase().includes('tipo') && String(c).toLowerCase().includes('equipe'))) || columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo')) || null;
+  }, [columns]);
+
+  const colEquipe = useMemo(() => {
+    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho', 'condição', 'sigla'];
+    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && c !== colTipoEquipe && !blocks.some(w => String(c).toLowerCase().includes(w)));
+    return candidates.find(c => String(c).toLowerCase().includes('nome da equipe')) || candidates.find(c => String(c).toLowerCase().includes('equipe')) || candidates.find(c => String(c).toLowerCase().includes('nome')) || null;
+  }, [columns, colUnidade, colIne, colTipoEquipe]);
+
+  const colMes = '_mesOrigem';
+  const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(String(c).toLowerCase())) || '_indicadorOrigem', [columns]);
+
+  const allData = useMemo(() => {
+    const enriched: any[] = [];
+    rawAllData.forEach((r, idx) => {
+      let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
+      const ic = colIne ? normIne(r[colIne]) : '';
+      let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
+      const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
+      
+      let tipoStr = 'Outros';
+      if (colTipoEquipe && r[colTipoEquipe]) {
+          tipoStr = String(r[colTipoEquipe]).toUpperCase().trim();
+      } else {
+          const lblTest = lbl.toUpperCase();
+          if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
+          else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
+      }
+
+      const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
+      const mappedInd = mapIndicatorName(indOrig);
+
+      enriched.push({ 
+        ...r, 
+        _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
+        _teamLabel: lbl, 
+        _ubsLabel: ubs,
+        _tipoEquipe: tipoStr,
+        _mappedIndicator: mappedInd
+      });
+    });
+    return enriched;
+  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador]);
 
   const [selectedUnidade, setSelectedUnidade] = useState('');
   const [selectedTipoEquipe, setSelectedTipoEquipe] = useState('');
@@ -621,10 +1043,7 @@ function ModuleDashboard({ files, bgClass }: any) {
         const mNum = monthOrder[m];
         if (mNum) {
           const diff = Math.abs(mNum - currentMonthNum);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closest = m;
-          }
+          if (diff < minDiff) { minDiff = diff; closest = m; }
         }
       });
       setSelectedMes(closest);
@@ -651,46 +1070,45 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
 
   const variableColumns = useMemo(() => {
-    const sampleRows = filteredData.length > 0 ? filteredData : allData;
-    if (sampleRows.length === 0) return [];
-    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade'];
-    return columns.filter(col => {
-      if ([colUnidade, colEquipe, colIne, colMes].includes(col)) return false;
-      const lower = col.toLowerCase().trim();
-      if (blocks.includes(lower) || lower.includes('cnes') || lower.includes('ibge')) return false;
+    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição'];
+    const validCols = columns.filter(col => {
+      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
+      const lower = String(col).toLowerCase().trim();
+      if (blocks.some(w => lower.includes(w))) return false;
       if ((lower.includes('código') || lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
-      return sampleRows.slice(0, 30).some(r => parseNum(r[col]) !== null);
+      return true; 
     });
-  }, [columns, filteredData, allData, colUnidade, colEquipe, colIne, colMes]);
+    return validCols;
+  }, [columns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
 
+  // INTELIGÊNCIA HARDCODED DA VARIÁVEL ATIVA
   const activeVariable = useMemo(() => {
-    if (!variableColumns.length) return '';
-    if (!selectedIndicador) {
-      const scoreCol = variableColumns.find(c => ['nota', 'pontua', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
-      return scoreCol || variableColumns[variableColumns.length - 1] || '';
-    }
-    const indL = selectedIndicador.toLowerCase();
+    if (!selectedIndicador) return '';
+    const indL = String(selectedIndicador).toLowerCase();
     
+    let found;
     if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
-       const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao entre'));
-       if (v) return v;
+       found = columns.find(c => String(c).toUpperCase().trim() === 'RAZÃO ENTRE NUMERADOR E DENOMINADOR' || String(c).toUpperCase().trim() === 'RAZÃO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao'));
+    } else if (indL.includes('c7')) {
+       found = columns.find(c => String(c).toUpperCase().trim() === 'SOMATÓRIO DA BOA PRÁTICA' || String(c).toUpperCase().trim() === 'SOMATÓRIO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio'));
+    } else {
+       found = columns.find(c => String(c).toUpperCase().trim() === 'PONTUAÇÃO' || String(c).toUpperCase().trim() === 'PONTUACAO');
+       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
     }
-    if (indL.includes('c7')) {
-       const v = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio') || c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('boa pratica'));
-       if (v) return v;
-    }
-    const pt = variableColumns.find(c => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
-    if (pt) return pt;
 
-    const scoreCol = variableColumns.find(c => ['nota', 'resultado', 'indicador', 'perc', 'total'].some(w => c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
-    return scoreCol || variableColumns[variableColumns.length - 1] || '';
-  }, [selectedIndicador, variableColumns]);
+    if (!found) {
+       found = columns.find(c => ['NOTA', 'RESULTADO', 'INDICADOR', 'PERC', 'TOTAL'].includes(String(c).toUpperCase().trim()));
+    }
+    return found ? String(found) : '';
+  }, [selectedIndicador, columns]);
 
   const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
 
   const consolidatedTeams = useMemo(() => {
     if (filteredData.length === 0) return [];
-    const statusCol = columns.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => c.toLowerCase().includes(w)));
+    const statusCol = columns.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().includes(w)));
     const teamMap = new Map<string, any>();
     filteredData.forEach(row => {
       const key = row._teamKey;
@@ -700,11 +1118,11 @@ function ModuleDashboard({ files, bgClass }: any) {
 
     return Array.from(teamMap.values()).map(group => {
       const varValues: Record<string, number | null> = {};
-      variableColumns.forEach(c => { let sum = 0, cnt = 0; group.rows.forEach((r: any) => { const n = parseNum(r[c]); if (n !== null) { sum += n; cnt++; } }); varValues[c] = cnt > 0 ? sum / cnt : null; });
+      variableColumns.forEach(c => { let sum = 0, cnt = 0; group.rows.forEach((r: any) => { const n = parseNum(r[String(c)]); if (n !== null) { sum += n; cnt++; } }); varValues[String(c)] = cnt > 0 ? sum / cnt : null; });
       let weightSum = 0, weightCount = 0;
       group.rows.forEach((r: any) => { 
-        let st = statusCol ? normStat(r[statusCol]) : null;
-        if (!st) for (let i = columns.length - 1; i >= 0; i--) if ((st = normStat(r[columns[i]]))) break;
+        let st = statusCol ? normStat(r[String(statusCol)]) : null;
+        if (!st) for (let i = columns.length - 1; i >= 0; i--) if ((st = normStat(r[String(columns[i])]))) break;
         if (!st && activeVariable) {
           const v = parseNum(r[activeVariable]);
           st = calcStatus(v, r._mappedIndicator);
@@ -714,8 +1132,8 @@ function ModuleDashboard({ files, bgClass }: any) {
       const avgWeight = weightCount > 0 ? Math.round(weightSum / weightCount) : null;
       const finalStatus = avgWeight ? W_STATUS[Math.min(4, Math.max(1, avgWeight))] : null;
       const baseRow = { ...group.rows[group.rows.length - 1] };
-      variableColumns.forEach(c => { if (varValues[c] !== null) baseRow[c] = formatVal(Number(varValues[c]!.toFixed(2))); });
-      if (statusCol && finalStatus) baseRow[statusCol] = finalStatus;
+      variableColumns.forEach(c => { if (varValues[String(c)] !== null) baseRow[String(c)] = formatVal(Number(varValues[String(c)]!.toFixed(2))); });
+      if (statusCol && finalStatus) baseRow[String(statusCol)] = finalStatus;
       const uniqueMonths = Array.from(new Set(group.rows.map((r: any) => r._mesOrigem)));
       return { key: group.key, unidade: group.uni, equipe: group.eq, varValues, status: finalStatus, monthsLabel: uniqueMonths.join(', '), consolidatedRow: baseRow };
     });
@@ -751,20 +1169,20 @@ function ModuleDashboard({ files, bgClass }: any) {
   const optU = useMemo(() => Array.from(new Set(allData
     .filter(d => !selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe)
     .map(d => String(d._ubsLabel || ''))
-  )).filter(Boolean).sort(), [allData, selectedTipoEquipe]);
+  )).filter(u => Boolean(u) && u !== 'SEM UNIDADE' && u !== 'GERAL').sort(), [allData, selectedTipoEquipe]);
   
   const optE = useMemo(() => Array.from(new Set(allData
     .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe))
     .map(d => String(d._teamLabel || ''))
-  )).filter(Boolean).sort(), [allData, selectedUnidade, selectedTipoEquipe]);
+  )).filter(e => Boolean(e) && !/^EQUIPE \d+$/.test(e) && !/^EQUIPE INE/.test(e)).sort(), [allData, selectedUnidade, selectedTipoEquipe]);
 
   const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
 
   const variablesChartData = variableColumns.map(col => {
     let sum = 0, count = 0;
-    consolidatedTeams.forEach(team => { if (team.varValues[col] !== null && team.varValues[col] !== undefined) { sum += team.varValues[col]!; count++; } });
-    return { name: col.length > 22 ? col.substring(0, 20) + '...' : col, fullName: col, valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
+    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
+    return { name: String(col).length > 22 ? String(col).substring(0, 20) + '...' : String(col), fullName: String(col), valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
   });
 
   const teamsComparisonData = useMemo(() => {
@@ -777,6 +1195,8 @@ function ModuleDashboard({ files, bgClass }: any) {
     const map = new Map<string, {sum: number, count: number, ubs: string}>();
     baseData.forEach(r => {
       const key = r._teamLabel;
+      if (/^EQUIPE \d+$/.test(key) || /^EQUIPE INE/.test(key) || r._ubsLabel === 'SEM UNIDADE' || r._ubsLabel === 'GERAL') return;
+
       if (!map.has(key)) map.set(key, { sum: 0, count: 0, ubs: r._ubsLabel });
       if (activeVariable) {
         const v = parseNum(r[activeVariable]);
@@ -785,7 +1205,7 @@ function ModuleDashboard({ files, bgClass }: any) {
     });
 
     return Array.from(map.entries()).map(([name, val]) => ({
-      name: name.replace('EQUIPE', 'EQ').substring(0, 15) + (name.length > 15 ? '...' : ''),
+      name: String(name).replace('EQUIPE', 'EQ').substring(0, 15) + (String(name).length > 15 ? '...' : ''),
       fullName: `${name} (${val.ubs})`,
       valor: val.count > 0 ? Number((val.sum / val.count).toFixed(2)) : 0
     })).sort((a, b) => b.valor - a.valor);
@@ -817,8 +1237,8 @@ function ModuleDashboard({ files, bgClass }: any) {
   const summaryVariablesMap: Record<string, string> = {};
   variableColumns.forEach(col => {
     let sum = 0, count = 0;
-    consolidatedTeams.forEach(team => { if (team.varValues[col] !== null && team.varValues[col] !== undefined) { sum += team.varValues[col]!; count++; } });
-    summaryVariablesMap[col] = formatVal(Number((count > 0 ? sum / count : 0).toFixed(2)));
+    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
+    summaryVariablesMap[String(col)] = formatVal(Number((count > 0 ? sum / count : 0).toFixed(2)));
   });
 
   const statusPieData = [
@@ -845,7 +1265,6 @@ function ModuleDashboard({ files, bgClass }: any) {
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {/* ORDENAÇÃO EXATA: 1. Unidades, 2. Equipes, 3. Tipo, 4. Indicador, 5. Mês, 6. Variável */}
           <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
           <select value={selectedTipoEquipe} onChange={e => { setSelectedTipoEquipe(e.target.value); setSelectedUnidade(''); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
@@ -960,13 +1379,13 @@ function ModuleDashboard({ files, bgClass }: any) {
                 <th onClick={() => requestSort('_ms')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Meses {sortConfig?.key === '_ms' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
                 <th onClick={() => requestSort('_eq')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Equipe {sortConfig?.key === '_eq' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
                 {columns.map(c => (
-                  <th key={c} onClick={() => requestSort(c)} className={`px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group ${c === activeVariable ? 'bg-blue-100' : ''}`}><div className="flex items-center">{c} {sortConfig?.key === c ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100 shrink-0" />}</div></th>
+                  <th key={String(c)} onClick={() => requestSort(String(c))} className={`px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group ${String(c) === activeVariable ? 'bg-blue-100' : ''}`}><div className="flex items-center">{String(c)} {sortConfig?.key === String(c) ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100 shrink-0" />}</div></th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {!isSingleTeam && totalEquipesUnicas > 1 && (
-                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold"><td className="px-3 py-2">RESUMO</td><td className="px-3 py-2">MÉDIA DAS EQUIPES</td>{columns.map(c => <td key={c} className="px-3 py-2">{summaryVariablesMap[c] !== undefined ? summaryVariablesMap[c] : '-'}</td>)}</tr>
+                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold"><td className="px-3 py-2">RESUMO</td><td className="px-3 py-2">MÉDIA DAS EQUIPES</td>{columns.map(c => <td key={String(c)} className="px-3 py-2">{summaryVariablesMap[String(c)] !== undefined ? summaryVariablesMap[String(c)] : '-'}</td>)}</tr>
               )}
               {sortedTableData.slice(0, 150).map((r, i) => (
                 <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
@@ -974,9 +1393,9 @@ function ModuleDashboard({ files, bgClass }: any) {
                   <td className="px-3 py-2 font-semibold bg-blue-50/10">{r._eq}</td>
                   {columns.map(c => {
                     let st = null;
-                    if (c.toLowerCase().includes('classifica') || c.toLowerCase().includes('conceito') || c.toLowerCase().includes('qualidade') || c.toLowerCase().includes('status')) { st = normStat(r[c]); }
-                    if (!st && c === activeVariable) { const v = parseNum(r[c]); st = calcStatus(v, r._mappedIndicator); }
-                    return <td key={c} className={`px-3 py-2 text-slate-600 ${c === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{String(r[c])}</span> : String(r[c] ?? '')}</td>;
+                    if (String(c).toLowerCase().includes('classifica') || String(c).toLowerCase().includes('conceito') || String(c).toLowerCase().includes('qualidade') || String(c).toLowerCase().includes('status')) { st = normStat(r[String(c)]); }
+                    if (!st && String(c) === activeVariable) { const v = parseNum(r[String(c)]); st = calcStatus(v, r._mappedIndicator); }
+                    return <td key={String(c)} className={`px-3 py-2 text-slate-600 ${String(c) === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{String(r[String(c)] ?? '')}</span> : String(r[String(c)] ?? '')}</td>;
                   })}
                 </tr>
               ))}
