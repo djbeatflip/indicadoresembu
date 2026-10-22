@@ -32,14 +32,16 @@ const secondaryAuth = getAuth(secondaryApp);
 interface ImportedFile { id: string; name: string; lastModified?: number; data: any[]; }
 interface User { id: string; email: string; role: string; name: string; }
 
-// --- ESCUDO ANTI ECRÃ BRANCO ---
+// --- ESCUDO ANTI ECRÃ BRANCO (ERROR BOUNDARY) ---
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null, isClearing: boolean }> {
   constructor(props: any) { 
     super(props); 
     this.state = { hasError: false, error: null, isClearing: false }; 
   }
   
-  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  static getDerivedStateFromError(error: Error) { 
+    return { hasError: true, error }; 
+  }
 
   handleEmergencyClear = async () => {
     this.setState({ isClearing: true });
@@ -51,7 +53,9 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
          batch.delete(qs.docs[i].ref);
          opCount++;
          if(opCount >= 400 || i === qs.docs.length - 1) { 
-            await batch.commit(); batch = writeBatch(db); opCount = 0; 
+            await batch.commit(); 
+            batch = writeBatch(db); 
+            opCount = 0; 
          }
       }
       window.location.reload();
@@ -69,8 +73,16 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Modo de Segurança Ativado</h2>
             <p className="text-sm text-slate-600 mb-6">O painel encontrou dados corrompidos e desligou a interface para evitar falhas. Utilize o botão abaixo para limpar a base de dados e recomeçar.</p>
-            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">{this.state.error?.toString()}</div>
-            <button onClick={this.handleEmergencyClear} disabled={this.state.isClearing} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30">
+            
+            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">
+              {this.state.error?.toString()}
+            </div>
+
+            <button 
+              onClick={this.handleEmergencyClear} 
+              disabled={this.state.isClearing}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30"
+            >
               {this.state.isClearing ? 'A Limpar a Nuvem...' : <><Trash2 className="mr-2 h-5 w-5"/> Forçar Limpeza da Nuvem</>}
             </button>
           </div>
@@ -720,6 +732,9 @@ function ModuleDashboard({ files, bgClass }: any) {
   const [selectedIndicador, setSelectedIndicador] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
+  
+  // Controle do modal do Status
+  const [activeModalStatus, setActiveModalStatus] = useState<string | null>(null);
 
   const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
   const optI = useMemo(() => {
@@ -779,8 +794,15 @@ function ModuleDashboard({ files, bgClass }: any) {
 
   const currentIndicatorColumns = useMemo(() => {
     if (baseFilterData.length === 0) return [];
-    // Mantém a ordem exata do Excel buscando os cabeçalhos da primeira linha do indicador
-    return Object.keys(baseFilterData[0]).filter(k => !k.startsWith('_') && !k.toUpperCase().includes('EMPTY'));
+    const keys = new Set<string>();
+    baseFilterData.forEach(r => {
+      Object.keys(r).forEach(k => {
+        if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) {
+          keys.add(k);
+        }
+      });
+    });
+    return Array.from(keys);
   }, [baseFilterData]);
 
   const optU = useMemo(() => Array.from(new Set(baseFilterData
@@ -843,23 +865,19 @@ function ModuleDashboard({ files, bgClass }: any) {
     return result;
   }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
 
-  // VARIÁVEIS A MOSTRAR - Aplica a Lista Negra e corta tudo o que está à esquerda de "PARÂMETRO"
   const variableColumns = useMemo(() => {
     if (currentIndicatorColumns.length === 0) return [];
     
-    const filtered = currentIndicatorColumns.filter(col => {
+    const paramIndex = currentIndicatorColumns.findIndex(c => normalizeStrForFind(c).includes('parametro'));
+    let candidateCols = paramIndex !== -1 ? currentIndicatorColumns.slice(paramIndex) : currentIndicatorColumns;
+
+    return candidateCols.filter(col => {
       if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
-      const normCol = normalizeStrForFind(col);
-      if (normCol.includes('parametro populacional') || normCol.includes('parametro')) return true; 
+      const lower = normalizeStrForFind(col);
+      if (lower.includes('parametro')) return true;
       if (isMetadataColumn(col)) return false;
       return true; 
     });
-
-    const paramCol = filtered.find(c => normalizeStrForFind(c).includes('parametro'));
-    if (paramCol) {
-      return [paramCol, ...filtered.filter(c => c !== paramCol)];
-    }
-    return filtered;
   }, [currentIndicatorColumns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
 
   const activeVariable = useMemo(() => {
@@ -1037,7 +1055,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center text-sm font-medium text-slate-700">
@@ -1079,11 +1097,26 @@ function ModuleDashboard({ files, bgClass }: any) {
       </section>
 
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3"><div className="bg-slate-100 p-2.5 rounded-full shrink-0"><Users className="h-5 w-5 text-slate-700" /></div><div><p className="text-xs text-slate-700 font-semibold uppercase">Equipes</p><p className="text-xl font-bold text-slate-800">{totalEquipesUnicas}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm flex items-center space-x-3"><div className="bg-blue-100 p-2.5 rounded-full shrink-0"><Award className="h-5 w-5 text-blue-600" /></div><div><p className="text-xs text-blue-700 font-semibold uppercase">Ótimo</p><p className="text-xl font-bold text-blue-600">{statusCounts['Ótimo']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center space-x-3"><div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3"><div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div><div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1"><div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div><div><p className="text-xs text-red-700 font-semibold uppercase">Regular</p><p className="text-xl font-bold text-red-600">{statusCounts['Regular']}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
+          <div className="bg-slate-100 p-2.5 rounded-full shrink-0"><Users className="h-5 w-5 text-slate-700" /></div>
+          <div><p className="text-xs text-slate-700 font-semibold uppercase">Equipes</p><p className="text-xl font-bold text-slate-800">{totalEquipesUnicas}</p></div>
+        </div>
+        <div onClick={() => statusCounts['Ótimo'] > 0 && setActiveModalStatus('Ótimo')} className={`bg-white p-4 rounded-xl border border-blue-200 shadow-sm flex items-center space-x-3 ${statusCounts['Ótimo'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-blue-400 transition-all' : 'opacity-60'}`}>
+          <div className="bg-blue-100 p-2.5 rounded-full shrink-0"><Award className="h-5 w-5 text-blue-600" /></div>
+          <div><p className="text-xs text-blue-700 font-semibold uppercase">Ótimo</p><p className="text-xl font-bold text-blue-600">{statusCounts['Ótimo']}</p></div>
+        </div>
+        <div onClick={() => statusCounts['Bom'] > 0 && setActiveModalStatus('Bom')} className={`bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center space-x-3 ${statusCounts['Bom'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-emerald-400 transition-all' : 'opacity-60'}`}>
+          <div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div>
+          <div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div>
+        </div>
+        <div onClick={() => statusCounts['Satisfatório'] > 0 && setActiveModalStatus('Satisfatório')} className={`bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3 ${statusCounts['Satisfatório'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all' : 'opacity-60'}`}>
+          <div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div>
+          <div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div>
+        </div>
+        <div onClick={() => statusCounts['Regular'] > 0 && setActiveModalStatus('Regular')} className={`bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1 ${statusCounts['Regular'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-red-400 transition-all' : 'opacity-60'}`}>
+          <div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div>
+          <div><p className="text-xs text-red-700 font-semibold uppercase">Regular</p><p className="text-xl font-bold text-red-600">{statusCounts['Regular']}</p></div>
+        </div>
       </section>
 
       {variablesChartData.length > 0 && (
@@ -1198,6 +1231,50 @@ function ModuleDashboard({ files, bgClass }: any) {
           </table>
         </div>
       </section>
+
+      {/* MODAL DE DETALHES DOS STATUS */}
+      {activeModalStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className={`p-4 flex justify-between items-center text-white ${activeModalStatus === 'Ótimo' ? 'bg-blue-600' : activeModalStatus === 'Bom' ? 'bg-emerald-600' : activeModalStatus === 'Satisfatório' ? 'bg-amber-500' : 'bg-red-600'}`}>
+              <div className="flex items-center space-x-2">
+                {activeModalStatus === 'Ótimo' && <Award className="h-5 w-5" />}
+                {activeModalStatus === 'Bom' && <CheckCircle className="h-5 w-5" />}
+                {activeModalStatus === 'Satisfatório' && <AlertTriangle className="h-5 w-5" />}
+                {activeModalStatus === 'Regular' && <AlertOctagon className="h-5 w-5" />}
+                <h3 className="font-bold text-lg">Equipes em Status {activeModalStatus} ({statusCounts[activeModalStatus as keyof typeof statusCounts]})</h3>
+              </div>
+              <button onClick={() => setActiveModalStatus(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-0 overflow-y-auto flex-1 bg-slate-50">
+              <ul className="divide-y divide-slate-200">
+                {consolidatedTeams.filter(t => t.status === activeModalStatus).map((t, idx) => (
+                  <li key={idx} className="p-4 hover:bg-slate-100 transition-colors flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5 flex items-center"><Layout className="h-3 w-3 mr-1"/> {t.unidade}</p>
+                      <p className="text-sm font-semibold text-slate-800 flex items-center"><Users className="h-4 w-4 mr-1.5 text-slate-400"/> {t.equipe}</p>
+                    </div>
+                    <div className="text-right ml-4 shrink-0">
+                      <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold text-white shadow-sm ${
+                        activeModalStatus === 'Ótimo' ? 'bg-blue-500' : 
+                        activeModalStatus === 'Bom' ? 'bg-emerald-500' : 
+                        activeModalStatus === 'Satisfatório' ? 'bg-amber-500' : 
+                        'bg-red-500'
+                      }`}>
+                        {t.consolidatedRow[activeVariable] ?? '-'}
+                      </span>
+                      <p className="text-[8px] text-slate-400 uppercase font-semibold mt-1 max-w-[80px] truncate" title={activeVariable}>
+                        {activeVariable || 'Valor'}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
