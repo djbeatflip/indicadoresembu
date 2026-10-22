@@ -100,7 +100,20 @@ const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Satisfatório': 2, 'B
 const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Satisfatório', 3: 'Bom', 4: 'Ótimo' };
 const C_COLORS = ['#118DFF', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6', '#E66C37'];
 
-const parseNum = (v: any) => { if (typeof v === 'number' && !isNaN(v)) return v; if (typeof v !== 'string') return null; let s = v.trim().replace(/%/g, '').replace(/R\$/g, '').trim(); if (!s) return null; if (s.includes('.') && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); else if (s.includes(',')) s = s.replace(',', '.'); const n = Number(s); return isNaN(n) ? null : n; };
+// Transforma hífens/traços em 0 matematicamente
+const parseNum = (v: any) => { 
+  if (v === '-' || v === '–' || v === '—') return 0;
+  if (typeof v === 'number' && !isNaN(v)) return v; 
+  if (typeof v !== 'string') return null; 
+  let s = v.trim().replace(/%/g, '').replace(/R\$/g, '').trim(); 
+  if (s === '-' || s === '–' || s === '—') return 0;
+  if (!s) return null; 
+  if (s.includes('.') && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); 
+  else if (s.includes(',')) s = s.replace(',', '.'); 
+  const n = Number(s); 
+  return isNaN(n) ? null : n; 
+};
+
 const formatVal = (v: number) => Number.isInteger(v) ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 const normTxt = (v: any) => String(v || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 const normIne = (v: any) => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
@@ -152,6 +165,8 @@ const mapIndicatorName = (name: string) => {
   return String(name || '').toUpperCase();
 };
 
+const normalizeStrForFind = (s: any) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
 // ==========================================
 // MOTOR DE LEITURA INFALÍVEL
 // ==========================================
@@ -161,7 +176,6 @@ const buildRows = (rows: any[][]) => {
   if (validRows.length === 0) return [];
 
   let hIdx = -1;
-  // Rigor Absoluto: Procura a linha que contém EXATAMENTE a palavra 'CNES', 'ESTABELECIMENTO' ou 'INE'
   for (let i = 0; i < validRows.length; i++) {
     const rowStr = validRows[i].map(c => String(c || '').replace(/\r?\n|\r/g, ' ').trim().toUpperCase());
     if (rowStr.some(c => c === 'CNES' || c === 'ESTABELECIMENTO' || c === 'INE' || c === 'NOME DA EQUIPE' || c === 'EQUIPE')) {
@@ -201,7 +215,7 @@ const buildRows = (rows: any[][]) => {
 };
 
 // ==========================================
-// APLICAÇÃO ENCAPSULADA (Para proteger de Crashes)
+// APLICAÇÃO ENCAPSULADA
 // ==========================================
 function MainApp() {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -340,7 +354,6 @@ function MainApp() {
   );
 }
 
-// O App real é exportado envolvido no ErrorBoundary para proteção total
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -641,34 +654,35 @@ function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
 }
 
 // ==========================================
-// MÓDULO: RANKING GERAL
+// MÓDULO DE DASHBOARD PRINCIPAL
 // ==========================================
-function ModuleRanking({ files, bgClass }: any) {
+function ModuleDashboard({ files, bgClass }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
-  const colUnidade = useMemo(() => {
-    const blocks = ['tipo', 'nota', 'condição', 'sigla', 'ine', 'cnes'];
-    const c = columns.slice(0, 15).filter(col => !blocks.some(w => String(col).toLowerCase().includes(w)));
-    return c.find(x => String(x).toLowerCase().includes('estabeleci')) || c.find(x => String(x).toLowerCase().includes('unidade')) || c.find(x => String(x).toLowerCase().includes('ubs')) || null;
-  }, [columns]);
+  const colUnidade = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
+  }) || null, [columns]);
 
-  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(String(c).toLowerCase().trim()) || String(c).toLowerCase().endsWith(' ine')) || null, [columns]);
+  const colIne = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s === 'ine' || s.includes('codigo ine');
+  }) || null, [columns]);
 
-  const colTipoEquipe = useMemo(() => {
-    return columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo de equipe') || (String(c).toLowerCase().includes('tipo') && String(c).toLowerCase().includes('equipe'))) || columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo')) || null;
-  }, [columns]);
+  const colTipoEquipe = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('tipo do ine') || s.includes('tipo de equipe') || s === 'tipo';
+  }) || null, [columns]);
 
-  const colEquipe = useMemo(() => {
-    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho', 'condição', 'sigla'];
-    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && c !== colTipoEquipe && !blocks.some(w => String(c).toLowerCase().includes(w)));
-    return candidates.find(c => String(c).toLowerCase().includes('nome da equipe')) || candidates.find(c => String(c).toLowerCase().includes('equipe')) || candidates.find(c => String(c).toLowerCase().includes('nome')) || null;
-  }, [columns, colUnidade, colIne, colTipoEquipe]);
+  const colEquipe = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('nome da equipe') || s === 'equipe' || s === 'nome';
+  }) || null, [columns]);
 
   const colMes = '_mesOrigem';
   const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(String(c).toLowerCase())) || '_indicadorOrigem', [columns]);
 
+  const isCorrupted = rawAllData.length > 0 && (!colUnidade && !colEquipe);
+
   const allData = useMemo(() => {
+    if (isCorrupted) return [];
     const enriched: any[] = [];
     rawAllData.forEach((r, idx) => {
       let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
@@ -677,12 +691,13 @@ function ModuleRanking({ files, bgClass }: any) {
       const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
       
       let tipoStr = 'Outros';
-      if (colTipoEquipe && r[colTipoEquipe]) {
-          tipoStr = String(r[colTipoEquipe]).toUpperCase().trim();
-      } else {
-          const lblTest = lbl.toUpperCase();
-          if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
-          else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
+      const typeVal = colTipoEquipe ? String(r[colTipoEquipe] || '').toUpperCase() : '';
+      const nameVal = lbl.toUpperCase();
+
+      if (typeVal.includes('ESF') || nameVal.includes('ESF') || typeVal.includes('FAMILIA') || nameVal.includes('FAMILIA')) {
+          tipoStr = 'ESF';
+      } else if (typeVal.includes('EAP') || nameVal.includes('EAP') || typeVal.includes('PRIMARIA') || nameVal.includes('PRIMARIA')) {
+          tipoStr = 'EAP';
       }
 
       const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
@@ -698,7 +713,567 @@ function ModuleRanking({ files, bgClass }: any) {
       });
     });
     return enriched;
-  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador]);
+  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador, isCorrupted]);
+
+  const [selectedUnidade, setSelectedUnidade] = useState('');
+  const [selectedTipoEquipe, setSelectedTipoEquipe] = useState('');
+  const [selectedEquipe, setSelectedEquipe] = useState('');
+  const [selectedMes, setSelectedMes] = useState('');
+  const [selectedIndicador, setSelectedIndicador] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
+
+  const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
+  const optI = useMemo(() => {
+    return Array.from(new Set(allData.map(d => String(d._mappedIndicator || ''))))
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.toLowerCase().includes('vinculo') || a.toLowerCase().includes('vínculo')) return -1;
+        if (b.toLowerCase().includes('vinculo') || b.toLowerCase().includes('vínculo')) return 1;
+        return a.localeCompare(b);
+      });
+  }, [allData]);
+
+  const handleClearFilters = () => {
+    setSelectedUnidade('');
+    setSelectedTipoEquipe('');
+    setSelectedEquipe('');
+    setSortConfig(null);
+    if (optI.length > 0) setSelectedIndicador(optI[0]);
+    if (optM.length > 0) {
+      const currentMonthNum = new Date().getMonth() + 1;
+      let closest = optM[optM.length - 1];
+      let minDiff = Infinity;
+      optM.forEach(m => {
+        const mNum = monthOrder[m];
+        if (mNum) {
+          const diff = Math.abs(mNum - currentMonthNum);
+          if (diff < minDiff) { minDiff = diff; closest = m; }
+        }
+      });
+      setSelectedMes(closest);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedIndicador && optI.length > 0) setSelectedIndicador(optI[0]);
+    if (!selectedMes && optM.length > 0) {
+      const currentMonthNum = new Date().getMonth() + 1;
+      let closest = optM[optM.length - 1];
+      let minDiff = Infinity;
+      optM.forEach(m => {
+        const mNum = monthOrder[m];
+        if (mNum) {
+          const diff = Math.abs(mNum - currentMonthNum);
+          if (diff < minDiff) { minDiff = diff; closest = m; }
+        }
+      });
+      setSelectedMes(closest);
+    }
+  }, [optI, optM, selectedIndicador, selectedMes]);
+
+  const baseFilterData = useMemo(() => {
+    return allData.filter(d => 
+       (!selectedMes || String(d[colMes]) === selectedMes) &&
+       (!selectedIndicador || d._mappedIndicator === selectedIndicador)
+    );
+  }, [allData, selectedMes, selectedIndicador, colMes]);
+
+  // INTELIGÊNCIA DE RECUPERAÇÃO DE ORDEM ORIGINAL DO EXCEL
+  const currentIndicatorColumns = useMemo(() => {
+    if (baseFilterData.length === 0) return [];
+    // Recolher as chaves exatas da primeira linha garante que a ordem do Excel se mantém perfeita!
+    return Object.keys(baseFilterData[0]).filter(k => !k.startsWith('_') && !k.toUpperCase().includes('EMPTY'));
+  }, [baseFilterData]);
+
+  const optU = useMemo(() => Array.from(new Set(baseFilterData
+    .filter(d => (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe) && (!selectedEquipe || d._teamLabel === selectedEquipe))
+    .map(d => String(d._ubsLabel || ''))
+  )).filter(u => Boolean(u) && u !== 'SEM UNIDADE' && u !== 'GERAL').sort(), [baseFilterData, selectedTipoEquipe, selectedEquipe]);
+  
+  const optT = useMemo(() => Array.from(new Set(baseFilterData
+    .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedEquipe || d._teamLabel === selectedEquipe))
+    .map(d => String(d._tipoEquipe || 'Outros'))
+  )).filter(t => Boolean(t) && t !== 'Outros').sort(), [baseFilterData, selectedUnidade, selectedEquipe]);
+
+  const optE = useMemo(() => Array.from(new Set(baseFilterData
+    .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe))
+    .map(d => String(d._teamLabel || ''))
+  )).filter(e => Boolean(e) && !/^EQUIPE \d+$/.test(e) && !/^EQUIPE INE/.test(e)).sort(), [baseFilterData, selectedUnidade, selectedTipoEquipe]);
+
+  useEffect(() => {
+    if (selectedEquipe) {
+      const teamMatch = baseFilterData.find(d => d._teamLabel === selectedEquipe);
+      if (teamMatch) {
+        if (selectedUnidade !== teamMatch._ubsLabel && teamMatch._ubsLabel !== 'SEM UNIDADE' && teamMatch._ubsLabel !== 'GERAL') {
+          setSelectedUnidade(teamMatch._ubsLabel);
+        }
+        if (selectedTipoEquipe !== teamMatch._tipoEquipe && teamMatch._tipoEquipe !== 'Outros') {
+          setSelectedTipoEquipe(teamMatch._tipoEquipe);
+        }
+      }
+    }
+  }, [selectedEquipe, baseFilterData]);
+
+  useEffect(() => {
+    if (selectedUnidade && optU.length > 0 && !optU.includes(selectedUnidade)) setSelectedUnidade('');
+    else if (optU.length === 1 && selectedUnidade !== optU[0]) setSelectedUnidade(optU[0]);
+  }, [optU]);
+
+  useEffect(() => {
+    if (selectedTipoEquipe && optT.length > 0 && !optT.includes(selectedTipoEquipe)) setSelectedTipoEquipe('');
+    else if (optT.length === 1 && selectedTipoEquipe !== optT[0]) setSelectedTipoEquipe(optT[0]);
+  }, [optT]);
+
+  useEffect(() => {
+    if (selectedEquipe && optE.length > 0 && !optE.includes(selectedEquipe)) setSelectedEquipe('');
+  }, [optE]);
+
+  const filteredData = useMemo(() => {
+    let result = baseFilterData;
+    if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
+    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
+    if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
+    return result;
+  }, [baseFilterData, selectedUnidade, selectedTipoEquipe, selectedEquipe]);
+
+  const filteredDataForTrend = useMemo(() => {
+    let result = allData;
+    if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
+    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
+    if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
+    if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
+    return result;
+  }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
+
+  // CORTE CIRÚRGICO - Ignora tudo o que está à esquerda de "PARÂMETRO POPULACIONAL"
+  const variableColumns = useMemo(() => {
+    if (currentIndicatorColumns.length === 0) return [];
+    
+    // Procura o parâmetro na lista de colunas ordenada
+    const paramIndex = currentIndicatorColumns.findIndex(c => normalizeStrForFind(c).includes('parametro'));
+    
+    // Se encontrou o Parâmetro, corta tudo para trás. Se não, usa as colunas todas para tentar limpar a seguir.
+    let candidateCols = paramIndex !== -1 ? currentIndicatorColumns.slice(paramIndex) : currentIndicatorColumns;
+
+    // Dupla proteção: Lista Negra absoluta de palavras proibidas (Caso o paramIndex não funcione em algum ficheiro atípico)
+    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição', 'sigla', 'tipo', 'estabelecimento', 'unidade', 'equipe', 'nome'];
+    
+    return candidateCols.filter(col => {
+      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
+      const lower = normalizeStrForFind(col);
+      
+      // Abre exceção automática para o parâmetro (é o primeiro e é sagrado)
+      if (lower.includes('parametro')) return true;
+
+      if (blocks.some(w => lower.includes(w) || lower === w)) return false;
+      if ((lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
+      
+      return true; 
+    });
+  }, [currentIndicatorColumns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
+
+  const activeVariable = useMemo(() => {
+    if (!selectedIndicador || variableColumns.length === 0) return '';
+    const indL = String(selectedIndicador).toLowerCase();
+    
+    const findCol = (keywords: string[]) => variableColumns.find(c => {
+       const norm = normalizeStrForFind(c);
+       return keywords.some(k => norm.includes(k));
+    });
+
+    let found;
+    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+       found = findCol(['razao entre', 'razao']);
+    } else if (indL.includes('c7')) {
+       found = findCol(['somatorio', 'boa pratica']);
+    } else {
+       found = findCol(['pontuacao', 'pontua']);
+    }
+
+    if (!found) found = findCol(['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao']);
+    return found ? String(found) : String(variableColumns[variableColumns.length - 1] || '');
+  }, [selectedIndicador, variableColumns]);
+
+  const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
+
+  const consolidatedTeams = useMemo(() => {
+    if (filteredData.length === 0) return [];
+    const statusCol = currentIndicatorColumns.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().includes(w)));
+    const teamMap = new Map<string, any>();
+    filteredData.forEach(row => {
+      const key = row._teamKey;
+      if (!teamMap.has(key)) teamMap.set(key, { key, uni: row._ubsLabel, eq: row._teamLabel, rows: [] });
+      teamMap.get(key).rows.push(row);
+    });
+
+    return Array.from(teamMap.values()).map(group => {
+      const varValues: Record<string, number | null> = {};
+      variableColumns.forEach(c => { let sum = 0, cnt = 0; group.rows.forEach((r: any) => { const n = parseNum(r[String(c)]); if (n !== null) { sum += n; cnt++; } }); varValues[String(c)] = cnt > 0 ? sum / cnt : null; });
+      let weightSum = 0, weightCount = 0;
+      group.rows.forEach((r: any) => { 
+        let st = statusCol ? normStat(r[String(statusCol)]) : null;
+        if (!st) for (let i = currentIndicatorColumns.length - 1; i >= 0; i--) if ((st = normStat(r[String(currentIndicatorColumns[i])]))) break;
+        if (!st && activeVariable) {
+          const v = parseNum(r[activeVariable]);
+          st = calcStatus(v, r._mappedIndicator);
+        }
+        if (st) { weightSum += S_WEIGHTS[st]; weightCount++; } 
+      });
+      const avgWeight = weightCount > 0 ? Math.round(weightSum / weightCount) : null;
+      const finalStatus = avgWeight ? W_STATUS[Math.min(4, Math.max(1, avgWeight))] : null;
+      const baseRow = { ...group.rows[group.rows.length - 1] };
+      variableColumns.forEach(c => { if (varValues[String(c)] !== null) baseRow[String(c)] = formatVal(Number(varValues[String(c)]!.toFixed(2))); });
+      if (statusCol && finalStatus) baseRow[String(statusCol)] = finalStatus;
+      const uniqueMonths = Array.from(new Set(group.rows.map((r: any) => r._mesOrigem)));
+      return { key: group.key, unidade: group.uni, equipe: group.eq, varValues, status: finalStatus, monthsLabel: uniqueMonths.join(', '), consolidatedRow: baseRow };
+    });
+  }, [filteredData, currentIndicatorColumns, variableColumns, activeVariable]);
+
+  const isSingleTeam = Boolean(selectedEquipe) || consolidatedTeams.length === 1;
+  const totalEquipesUnicas = consolidatedTeams.length;
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const sortedTableData = useMemo(() => {
+    let sortableData = tableMode === 'consolidado' ? consolidatedTeams.map(t => ({ ...t.consolidatedRow, _ms: t.monthsLabel, _eq: t.equipe })) : filteredData.map(r => ({ ...r, _ms: r._mesOrigem, _eq: r._teamLabel }));
+    if (sortConfig !== null) {
+      sortableData.sort((a, b) => {
+        const valA = a[sortConfig.key], valB = b[sortConfig.key];
+        const stA = normStat(valA), stB = normStat(valB);
+        if (stA && stB) { const rankA = S_WEIGHTS[stA] || 0, rankB = S_WEIGHTS[stB] || 0; if (rankA !== rankB) return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA; }
+        const numA = parseNum(valA), numB = parseNum(valB);
+        if (numA !== null && numB !== null) return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+        const strA = String(valA || '').toLowerCase(), strB = String(valB || '').toLowerCase();
+        if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortableData;
+  }, [tableMode, consolidatedTeams, filteredData, sortConfig]);
+
+  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
+  consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
+
+  const variablesChartData = variableColumns.map(col => {
+    let sum = 0, count = 0;
+    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
+    return { name: String(col).length > 22 ? String(col).substring(0, 20) + '...' : String(col), fullName: String(col), valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
+  });
+
+  const teamsComparisonData = useMemo(() => {
+    const map = new Map<string, {sum: number, count: number, ubs: string}>();
+    filteredData.forEach(r => {
+      const key = r._teamLabel;
+      if (!map.has(key)) map.set(key, { sum: 0, count: 0, ubs: r._ubsLabel });
+      if (activeVariable) {
+        const v = parseNum(r[activeVariable]);
+        if (v !== null) { map.get(key)!.sum += v; map.get(key)!.count++; }
+      }
+    });
+
+    return Array.from(map.entries()).map(([name, val]) => ({
+      name: String(name).replace('EQUIPE', 'EQ').substring(0, 15) + (String(name).length > 15 ? '...' : ''),
+      fullName: `${name} (${val.ubs})`,
+      valor: val.count > 0 ? Number((val.sum / val.count).toFixed(2)) : 0
+    })).sort((a, b) => b.valor - a.valor);
+  }, [filteredData, activeVariable]);
+
+  const lineChartData = (() => {
+    const byMonth = new Map<string, any[]>();
+    optM.forEach(m => byMonth.set(m, []));
+    
+    filteredDataForTrend.forEach(row => { 
+      const mes = String(row[colMes] || 'Geral'); 
+      if (byMonth.has(mes)) byMonth.get(mes)!.push(row); 
+    });
+    
+    return Array.from(byMonth.entries()).map(([mes, rows]) => {
+      if (rows.length === 0) return { name: mes, valor: null };
+      const tMap = new Map<string, { sum: number; count: number }>();
+      rows.forEach(r => {
+        if (!tMap.has(r._teamKey)) tMap.set(r._teamKey, { sum: 0, count: 0 });
+        if (activeVariable) { const n = parseNum(r[activeVariable]); if (n !== null) { tMap.get(r._teamKey)!.sum += n; tMap.get(r._teamKey)!.count++; } } 
+        else { tMap.get(r._teamKey)!.sum++; tMap.get(r._teamKey)!.count++; }
+      });
+      let sT = 0, cT = 0;
+      tMap.forEach(t => { if (t.count > 0) { sT += t.sum / t.count; cT++; } });
+      return { name: mes, valor: Number((activeVariable ? (cT > 0 ? sT / cT : 0) : tMap.size).toFixed(2)) };
+    });
+  })();
+
+  const displayColumns = variableColumns;
+
+  const summaryVariablesMap: Record<string, string> = {};
+  displayColumns.forEach(col => {
+    let sum = 0, count = 0;
+    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
+    summaryVariablesMap[String(col)] = formatVal(Number((count > 0 ? sum / count : 0).toFixed(2)));
+  });
+
+  const statusPieData = [
+    { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
+    { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
+    { name: 'Satisfatório', total: statusCounts['Satisfatório'], color: '#F59E0B' },
+    { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
+  ].filter(d => d.total > 0);
+
+  if (files.length === 0) return (
+    <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
+      <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
+      <h2 className="text-xl font-medium text-slate-600">Nenhum dado hospedado no Firebase.</h2>
+      <p className="mt-2 text-sm">Vá ao módulo "Importar Dados" no menu lateral para iniciar.</p>
+    </div>
+  );
+
+  if (isCorrupted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[60vh] p-8 bg-white rounded-xl shadow-sm border border-red-200 m-6">
+        <AlertOctagon className="h-16 w-16 text-red-500 mb-4" />
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Dados Corrompidos na Nuvem Detetados</h2>
+        <p className="text-sm text-slate-500 mb-6 max-w-md text-center">O sistema detetou que as planilhas guardadas atualmente estão corrompidas, devido a cabeçalhos mal formatados na importação anterior.</p>
+        <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 text-sm text-slate-700 space-y-3 w-full max-w-md">
+          <p className="font-bold text-slate-800">Para repor o funcionamento normal do painel:</p>
+          <p>1. Vá ao menu lateral esquerdo e clique em <b>"Importar Dados"</b>.</p>
+          <p>2. Clique no botão vermelho <b>"Apagar TUDO da Nuvem"</b> (ao lado da lista de planilhas).</p>
+          <p>3. Selecione e faça o upload das planilhas originais novamente.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center text-sm font-medium text-slate-700">
+            <Filter className="h-4 w-4 mr-2 text-blue-600" /> Filtros e Variáveis:
+            {(selectedUnidade || selectedEquipe || selectedTipoEquipe) && (
+              <button onClick={handleClearFilters} title="Restaurar todos os filtros" className="ml-4 flex items-center px-2.5 py-1 bg-slate-100 hover:bg-red-50 text-slate-500 hover:text-red-600 text-[10px] uppercase font-bold rounded border border-slate-200 hover:border-red-200 transition-colors">
+                <X className="h-3 w-3 mr-1" /> Limpar Filtros
+              </button>
+            )}
+          </div>
+          <div className={`px-3 py-1 rounded-full text-xs font-semibold border ${isSingleTeam ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>{isSingleTeam ? `🎯 Reais: ${consolidatedTeams[0]?.equipe || selectedEquipe}` : `📊 Média das ${totalEquipesUnicas} Equipes`}</div>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
+            <option value="">🏥 Todas as Unidades</option>
+            {optU.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
+            <option value="">👥 Todas as Equipes</option>
+            {optE.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={selectedTipoEquipe} onChange={e => { setSelectedTipoEquipe(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
+            <option value="">🏷️ Todos tipos de equipe</option>
+            {optT.map(t => <option key={t} value={t}>Apenas {t}</option>)}
+          </select>
+
+          <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optI.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
+            {optM.map(o => <option key={o} value={o}>📅 {o}</option>)}
+          </select>
+          <div className="w-full px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-blue-50/60 text-blue-950 flex flex-col justify-center overflow-hidden h-[42px]">
+            <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-none mb-0.5">Variável Automática Selecionada</span>
+            <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3"><div className="bg-slate-100 p-2.5 rounded-full shrink-0"><Users className="h-5 w-5 text-slate-700" /></div><div><p className="text-xs text-slate-700 font-semibold uppercase">Equipes</p><p className="text-xl font-bold text-slate-800">{totalEquipesUnicas}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm flex items-center space-x-3"><div className="bg-blue-100 p-2.5 rounded-full shrink-0"><Award className="h-5 w-5 text-blue-600" /></div><div><p className="text-xs text-blue-700 font-semibold uppercase">Ótimo</p><p className="text-xl font-bold text-blue-600">{statusCounts['Ótimo']}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center space-x-3"><div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3"><div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div><div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div></div>
+        <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1"><div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div><div><p className="text-xs text-red-700 font-semibold uppercase">Regular</p><p className="text-xl font-bold text-red-600">{statusCounts['Regular']}</p></div></div>
+      </section>
+
+      {variablesChartData.length > 0 && (
+        <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Valores Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {variablesChartData.map((v, i) => (
+              <div key={i} className={`p-4 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
+                <p className="text-xs text-slate-600 font-medium leading-tight" title={v.fullName}>{v.fullName}</p>
+                <p className={`text-2xl font-bold mt-2 ${v.fullName === activeVariable ? 'text-blue-900' : 'text-slate-800'}`}>{formatVal(v.valor)}</p>
+                <p className="text-[10px] text-slate-500 mt-1">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+          <h3 className="text-base font-bold text-slate-800 mb-1">Comparativo por Equipe</h3>
+          <div style={{ height: 290 }}>
+            <ResponsiveContainer>
+              <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
+                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName || activeVariable]} />
+                <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {teamsComparisonData.map((e, i) => <Cell key={i} fill={'#1D4ED8'} />)}
+                  <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-base font-bold text-slate-800 mb-1">Classificação Final</h3>
+          <div style={{ height: 290 }}>
+            {statusPieData.length ? (
+              <ResponsiveContainer>
+                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
+                  <Pie data={statusPieData} cx="50%" cy="50%" outerRadius={65} dataKey="total" nameKey="name" label={({ name, value }) => `${name}: ${value}`}>
+                    {statusPieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <div className="h-full flex items-center justify-center text-slate-400 text-sm">Sem classificação</div>}
+          </div>
+        </div>
+        
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
+          <h3 className="text-base font-bold text-slate-800 mb-1">Evolução Mensal ({activeVariable || 'Variável Focada'})</h3>
+          <div style={{ height: 280 }}>
+            <ResponsiveContainer>
+              <LineChart data={lineChartData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} padding={{ left: 20, right: 20 }} />
+                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v:number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} />
+                <Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }} connectNulls={false}>
+                  <LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
+                </Line>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-base font-bold text-slate-800 flex items-center"><FileText className="h-5 w-5 mr-2 text-blue-600" /> Relatório Completo (Planilha)</h3>
+          <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg text-xs">
+            <button onClick={() => setTableMode('consolidado')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'consolidado' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Por Equipe</button>
+            <button onClick={() => setTableMode('historico')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'historico' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Histórico Mês</button>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-lg">
+          <table className="w-full text-xs text-left whitespace-nowrap">
+            <thead className="text-slate-700 bg-slate-100 sticky top-0 shadow-sm z-10">
+              <tr>
+                <th onClick={() => requestSort('_ms')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Meses {sortConfig?.key === '_ms' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
+                <th onClick={() => requestSort('_eq')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Equipe {sortConfig?.key === '_eq' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
+                {displayColumns.map(c => (
+                  <th key={String(c)} onClick={() => requestSort(String(c))} className={`px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group ${String(c) === activeVariable ? 'bg-blue-100' : ''}`}><div className="flex items-center">{String(c)} {sortConfig?.key === String(c) ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100 shrink-0" />}</div></th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {!isSingleTeam && totalEquipesUnicas > 1 && (
+                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold"><td className="px-3 py-2">RESUMO</td><td className="px-3 py-2">MÉDIA DAS EQUIPES</td>{displayColumns.map(c => <td key={String(c)} className="px-3 py-2">{summaryVariablesMap[String(c)] !== undefined ? summaryVariablesMap[String(c)] : '-'}</td>)}</tr>
+              )}
+              {sortedTableData.slice(0, 150).map((r, i) => (
+                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-2 text-blue-800 bg-blue-50/20">{r._ms}</td>
+                  <td className="px-3 py-2 font-semibold bg-blue-50/10">{r._eq}</td>
+                  {displayColumns.map(c => {
+                    let rawVal = String(r[String(c)] ?? '').trim();
+                    if (rawVal === '-' || rawVal === '–' || rawVal === '—') rawVal = '0'; 
+
+                    let st = null;
+                    if (String(c).toLowerCase().includes('classifica') || String(c).toLowerCase().includes('conceito') || String(c).toLowerCase().includes('qualidade') || String(c).toLowerCase().includes('status')) { st = normStat(rawVal); }
+                    if (!st && String(c) === activeVariable) { const v = parseNum(rawVal); st = calcStatus(v, r._mappedIndicator); }
+                    return <td key={String(c)} className={`px-3 py-2 text-slate-600 ${String(c) === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{rawVal}</span> : rawVal}</td>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ==========================================
+// MÓDULO: RANKING GERAL
+// ==========================================
+function ModuleRanking({ files, bgClass }: any) {
+  const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
+  const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
+
+  const colUnidade = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
+  }) || null, [columns]);
+
+  const colIne = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s === 'ine' || s.includes('codigo ine');
+  }) || null, [columns]);
+
+  const colTipoEquipe = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('tipo do ine') || s.includes('tipo de equipe') || s === 'tipo';
+  }) || null, [columns]);
+
+  const colEquipe = useMemo(() => columns.find(c => {
+    const s = normalizeStrForFind(c); return s.includes('nome da equipe') || s === 'equipe' || s === 'nome';
+  }) || null, [columns]);
+
+  const colMes = '_mesOrigem';
+  const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(String(c).toLowerCase())) || '_indicadorOrigem', [columns]);
+
+  const isCorrupted = rawAllData.length > 0 && (!colUnidade && !colEquipe);
+
+  const allData = useMemo(() => {
+    if (isCorrupted) return [];
+    const enriched: any[] = [];
+    rawAllData.forEach((r, idx) => {
+      let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
+      const ic = colIne ? normIne(r[colIne]) : '';
+      let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
+      const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
+      
+      let tipoStr = 'Outros';
+      const typeVal = colTipoEquipe ? String(r[colTipoEquipe] || '').toUpperCase() : '';
+      const nameVal = lbl.toUpperCase();
+
+      if (typeVal.includes('ESF') || nameVal.includes('ESF') || typeVal.includes('FAMILIA') || nameVal.includes('FAMILIA')) {
+          tipoStr = 'ESF';
+      } else if (typeVal.includes('EAP') || nameVal.includes('EAP') || typeVal.includes('PRIMARIA') || nameVal.includes('PRIMARIA')) {
+          tipoStr = 'EAP';
+      }
+
+      const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
+      const mappedInd = mapIndicatorName(indOrig);
+
+      enriched.push({ 
+        ...r, 
+        _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
+        _teamLabel: lbl, 
+        _ubsLabel: ubs,
+        _tipoEquipe: tipoStr,
+        _mappedIndicator: mappedInd
+      });
+    });
+    return enriched;
+  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador, isCorrupted]);
 
   const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
   const optI = useMemo(() => {
@@ -724,34 +1299,43 @@ function ModuleRanking({ files, bgClass }: any) {
     return allData.filter(d => String(d[colMes]) === selectedMes);
   }, [allData, selectedMes, colMes]);
 
-  const variableColumns = useMemo(() => {
-    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição'];
-    return columns.filter(col => {
-      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
-      const lower = String(col).toLowerCase().trim();
-      if (blocks.some(w => lower.includes(w))) return false;
-      if ((lower.includes('código') || lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
-      return allData.slice(0, 30).some(r => parseNum(r[col]) !== null);
+  const indicatorVariablesLookup = useMemo(() => {
+    const lookup: Record<string, string> = {};
+    optI.forEach(ind => {
+      const indRows = allData.filter(d => d._mappedIndicator === ind);
+      if (indRows.length > 0) {
+        const keys = new Set<string>();
+        indRows.slice(0, 10).forEach(r => Object.keys(r).forEach(k => {
+           if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) keys.add(k);
+        }));
+        const indCols = Array.from(keys);
+        
+        const paramIndex = indCols.findIndex(c => normalizeStrForFind(c).includes('parametro'));
+        const validCols = paramIndex !== -1 ? indCols.slice(paramIndex) : indCols;
+        
+        const indL = ind.toLowerCase();
+        const findCol = (keywords: string[]) => validCols.find(c => {
+           const norm = normalizeStrForFind(c);
+           return keywords.some(k => norm.includes(k));
+        });
+        
+        let found;
+        if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+           found = findCol(['razao entre', 'razao']);
+        } else if (indL.includes('c7')) {
+           found = findCol(['somatorio', 'boa pratica']);
+        } else {
+           found = findCol(['pontuacao', 'pontua']);
+        }
+        if (!found) found = findCol(['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao']);
+        lookup[ind] = found || '';
+      }
     });
-  }, [columns, allData, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
+    return lookup;
+  }, [allData, optI]);
 
   const getActiveVarForIndicator = (ind: string) => {
-    const indL = String(ind || '').toLowerCase();
-    let found;
-    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'RAZÃO ENTRE NUMERADOR E DENOMINADOR' || String(c).toUpperCase().trim() === 'RAZÃO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao'));
-    } else if (indL.includes('c7')) {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'SOMATÓRIO DA BOA PRÁTICA' || String(c).toUpperCase().trim() === 'SOMATÓRIO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio'));
-    } else {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'PONTUAÇÃO' || String(c).toUpperCase().trim() === 'PONTUACAO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
-    }
-    if (!found) {
-       found = columns.find(c => ['NOTA', 'RESULTADO', 'TOTAL'].includes(String(c).toUpperCase().trim()));
-    }
-    return found ? String(found) : '';
+    return indicatorVariablesLookup[ind] || '';
   };
 
   const getStatusForRow = (row: any, ind: string) => {
@@ -832,6 +1416,22 @@ function ModuleRanking({ files, bgClass }: any) {
       <p className="mt-2 text-sm">Importe as planilhas primeiro.</p>
     </div>
   );
+
+  if (isCorrupted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[60vh] p-8 bg-white rounded-xl shadow-sm border border-red-200 m-6">
+        <AlertOctagon className="h-16 w-16 text-red-500 mb-4" />
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Dados Corrompidos na Nuvem Detetados</h2>
+        <p className="text-sm text-slate-500 mb-6 max-w-md text-center">O sistema detetou que as planilhas guardadas atualmente estão corrompidas, devido a cabeçalhos mal formatados na importação anterior.</p>
+        <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 text-sm text-slate-700 space-y-3 w-full max-w-md">
+          <p className="font-bold text-slate-800">Para repor o funcionamento normal do painel:</p>
+          <p>1. Vá ao menu lateral esquerdo e clique em <b>"Importar Dados"</b>.</p>
+          <p>2. Clique no botão vermelho <b>"Apagar TUDO da Nuvem"</b> (ao lado da lista de planilhas).</p>
+          <p>3. Selecione e faça o upload das planilhas originais novamente.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -946,459 +1546,6 @@ function ModuleRanking({ files, bgClass }: any) {
                 </tr>
               ))}
               {sortedIndRanking.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400">Sem dados para este mês.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-// ==========================================
-// MÓDULO DE DASHBOARD PRINCIPAL
-// ==========================================
-function ModuleDashboard({ files, bgClass }: any) {
-  const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
-  const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
-
-  const colUnidade = useMemo(() => {
-    const blocks = ['tipo', 'nota', 'condição', 'sigla', 'ine', 'cnes'];
-    const c = columns.slice(0, 15).filter(col => !blocks.some(w => String(col).toLowerCase().includes(w)));
-    return c.find(x => String(x).toLowerCase().includes('estabeleci')) || c.find(x => String(x).toLowerCase().includes('unidade')) || c.find(x => String(x).toLowerCase().includes('ubs')) || null;
-  }, [columns]);
-
-  const colIne = useMemo(() => columns.slice(0, 12).find(c => ['ine', 'código ine', 'codigo ine'].includes(String(c).toLowerCase().trim()) || String(c).toLowerCase().endsWith(' ine')) || null, [columns]);
-
-  const colTipoEquipe = useMemo(() => {
-    return columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo de equipe') || (String(c).toLowerCase().includes('tipo') && String(c).toLowerCase().includes('equipe'))) || columns.slice(0, 15).find(c => String(c).toLowerCase().includes('tipo')) || null;
-  }, [columns]);
-
-  const colEquipe = useMemo(() => {
-    const blocks = ['tipo', 'nota', 'pontua', 'resultado', 'meta', 'total', 'perc', 'média', 'media', 'pondera', 'avalia', 'propor', 'razão', 'razao', 'numerador', 'denominador', 'cadastro', 'atendimento', 'cuidado', 'pessoa', 'gesta', 'diabet', 'hiperten', 'vacina', 'exame', 'consulta', 'visita', 'procedimento', 'classifica', 'conceito', 'qualidade', 'status', 'desempenho', 'condição', 'sigla'];
-    const candidates = columns.slice(0, 15).filter(c => c !== colUnidade && c !== colIne && c !== colTipoEquipe && !blocks.some(w => String(c).toLowerCase().includes(w)));
-    return candidates.find(c => String(c).toLowerCase().includes('nome da equipe')) || candidates.find(c => String(c).toLowerCase().includes('equipe')) || candidates.find(c => String(c).toLowerCase().includes('nome')) || null;
-  }, [columns, colUnidade, colIne, colTipoEquipe]);
-
-  const colMes = '_mesOrigem';
-  const colIndicador = useMemo(() => columns.slice(0, 8).find(c => ['indicador', 'condição', 'condicao'].includes(String(c).toLowerCase())) || '_indicadorOrigem', [columns]);
-
-  const allData = useMemo(() => {
-    const enriched: any[] = [];
-    rawAllData.forEach((r, idx) => {
-      let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
-      const ic = colIne ? normIne(r[colIne]) : '';
-      let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
-      const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
-      
-      let tipoStr = 'Outros';
-      if (colTipoEquipe && r[colTipoEquipe]) {
-          tipoStr = String(r[colTipoEquipe]).toUpperCase().trim();
-      } else {
-          const lblTest = lbl.toUpperCase();
-          if (lblTest.includes('ESF') || lblTest.includes('SAUDE DA FAMILIA')) tipoStr = 'ESF';
-          else if (lblTest.includes('EAP') || lblTest.includes('ATENCAO PRIMARIA')) tipoStr = 'EAP';
-      }
-
-      const indOrig = String(colIndicador !== '_indicadorOrigem' && r[colIndicador] ? r[colIndicador] : r._indicadorOrigem || '');
-      const mappedInd = mapIndicatorName(indOrig);
-
-      enriched.push({ 
-        ...r, 
-        _teamKey: `UBS_${normTxt(ubs)}__EQ_${normTxt(lbl)}`, 
-        _teamLabel: lbl, 
-        _ubsLabel: ubs,
-        _tipoEquipe: tipoStr,
-        _mappedIndicator: mappedInd
-      });
-    });
-    return enriched;
-  }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador]);
-
-  const [selectedUnidade, setSelectedUnidade] = useState('');
-  const [selectedTipoEquipe, setSelectedTipoEquipe] = useState('');
-  const [selectedEquipe, setSelectedEquipe] = useState('');
-  const [selectedMes, setSelectedMes] = useState('');
-  const [selectedIndicador, setSelectedIndicador] = useState('');
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
-  const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
-
-  const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
-  const optI = useMemo(() => {
-    return Array.from(new Set(allData.map(d => String(d._mappedIndicator || ''))))
-      .filter(Boolean)
-      .sort((a, b) => {
-        if (a.toLowerCase().includes('vinculo') || a.toLowerCase().includes('vínculo')) return -1;
-        if (b.toLowerCase().includes('vinculo') || b.toLowerCase().includes('vínculo')) return 1;
-        return a.localeCompare(b);
-      });
-  }, [allData]);
-
-  useEffect(() => {
-    if (!selectedIndicador && optI.length > 0) setSelectedIndicador(optI[0]);
-    if (!selectedMes && optM.length > 0) {
-      const currentMonthNum = new Date().getMonth() + 1;
-      let closest = optM[optM.length - 1];
-      let minDiff = Infinity;
-      optM.forEach(m => {
-        const mNum = monthOrder[m];
-        if (mNum) {
-          const diff = Math.abs(mNum - currentMonthNum);
-          if (diff < minDiff) { minDiff = diff; closest = m; }
-        }
-      });
-      setSelectedMes(closest);
-    }
-  }, [optI, optM, selectedIndicador, selectedMes]);
-
-  const filteredData = useMemo(() => {
-    let result = allData;
-    if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
-    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
-    if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
-    if (selectedMes) result = result.filter(d => String(d[colMes]) === selectedMes);
-    if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
-    return result;
-  }, [allData, columns, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedMes, selectedIndicador, colMes]);
-
-  const filteredDataForTrend = useMemo(() => {
-    let result = allData;
-    if (selectedUnidade) result = result.filter(d => d._ubsLabel === selectedUnidade);
-    if (selectedTipoEquipe) result = result.filter(d => d._tipoEquipe === selectedTipoEquipe);
-    if (selectedEquipe) result = result.filter(d => d._teamLabel === selectedEquipe);
-    if (selectedIndicador) result = result.filter(d => d._mappedIndicator === selectedIndicador);
-    return result;
-  }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
-
-  const variableColumns = useMemo(() => {
-    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição'];
-    const validCols = columns.filter(col => {
-      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
-      const lower = String(col).toLowerCase().trim();
-      if (blocks.some(w => lower.includes(w))) return false;
-      if ((lower.includes('código') || lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
-      return true; 
-    });
-    return validCols;
-  }, [columns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
-
-  // INTELIGÊNCIA HARDCODED DA VARIÁVEL ATIVA
-  const activeVariable = useMemo(() => {
-    if (!selectedIndicador) return '';
-    const indL = String(selectedIndicador).toLowerCase();
-    
-    let found;
-    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'RAZÃO ENTRE NUMERADOR E DENOMINADOR' || String(c).toUpperCase().trim() === 'RAZÃO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('razao'));
-    } else if (indL.includes('c7')) {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'SOMATÓRIO DA BOA PRÁTICA' || String(c).toUpperCase().trim() === 'SOMATÓRIO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('somatorio'));
-    } else {
-       found = columns.find(c => String(c).toUpperCase().trim() === 'PONTUAÇÃO' || String(c).toUpperCase().trim() === 'PONTUACAO');
-       if (!found) found = columns.find(c => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('pontua'));
-    }
-
-    if (!found) {
-       found = columns.find(c => ['NOTA', 'RESULTADO', 'INDICADOR', 'PERC', 'TOTAL'].includes(String(c).toUpperCase().trim()));
-    }
-    return found ? String(found) : '';
-  }, [selectedIndicador, columns]);
-
-  const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
-
-  const consolidatedTeams = useMemo(() => {
-    if (filteredData.length === 0) return [];
-    const statusCol = columns.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().includes(w)));
-    const teamMap = new Map<string, any>();
-    filteredData.forEach(row => {
-      const key = row._teamKey;
-      if (!teamMap.has(key)) teamMap.set(key, { key, uni: row._ubsLabel, eq: row._teamLabel, rows: [] });
-      teamMap.get(key).rows.push(row);
-    });
-
-    return Array.from(teamMap.values()).map(group => {
-      const varValues: Record<string, number | null> = {};
-      variableColumns.forEach(c => { let sum = 0, cnt = 0; group.rows.forEach((r: any) => { const n = parseNum(r[String(c)]); if (n !== null) { sum += n; cnt++; } }); varValues[String(c)] = cnt > 0 ? sum / cnt : null; });
-      let weightSum = 0, weightCount = 0;
-      group.rows.forEach((r: any) => { 
-        let st = statusCol ? normStat(r[String(statusCol)]) : null;
-        if (!st) for (let i = columns.length - 1; i >= 0; i--) if ((st = normStat(r[String(columns[i])]))) break;
-        if (!st && activeVariable) {
-          const v = parseNum(r[activeVariable]);
-          st = calcStatus(v, r._mappedIndicator);
-        }
-        if (st) { weightSum += S_WEIGHTS[st]; weightCount++; } 
-      });
-      const avgWeight = weightCount > 0 ? Math.round(weightSum / weightCount) : null;
-      const finalStatus = avgWeight ? W_STATUS[Math.min(4, Math.max(1, avgWeight))] : null;
-      const baseRow = { ...group.rows[group.rows.length - 1] };
-      variableColumns.forEach(c => { if (varValues[String(c)] !== null) baseRow[String(c)] = formatVal(Number(varValues[String(c)]!.toFixed(2))); });
-      if (statusCol && finalStatus) baseRow[String(statusCol)] = finalStatus;
-      const uniqueMonths = Array.from(new Set(group.rows.map((r: any) => r._mesOrigem)));
-      return { key: group.key, unidade: group.uni, equipe: group.eq, varValues, status: finalStatus, monthsLabel: uniqueMonths.join(', '), consolidatedRow: baseRow };
-    });
-  }, [filteredData, columns, variableColumns, activeVariable]);
-
-  const isSingleTeam = Boolean(selectedEquipe) || consolidatedTeams.length === 1;
-  const totalEquipesUnicas = consolidatedTeams.length;
-
-  const requestSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
-    setSortConfig({ key, direction });
-  };
-
-  const sortedTableData = useMemo(() => {
-    let sortableData = tableMode === 'consolidado' ? consolidatedTeams.map(t => ({ ...t.consolidatedRow, _ms: t.monthsLabel, _eq: t.equipe })) : filteredData.map(r => ({ ...r, _ms: r._mesOrigem, _eq: r._teamLabel }));
-    if (sortConfig !== null) {
-      sortableData.sort((a, b) => {
-        const valA = a[sortConfig.key], valB = b[sortConfig.key];
-        const stA = normStat(valA), stB = normStat(valB);
-        if (stA && stB) { const rankA = S_WEIGHTS[stA] || 0, rankB = S_WEIGHTS[stB] || 0; if (rankA !== rankB) return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA; }
-        const numA = parseNum(valA), numB = parseNum(valB);
-        if (numA !== null && numB !== null) return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
-        const strA = String(valA || '').toLowerCase(), strB = String(valB || '').toLowerCase();
-        if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return sortableData;
-  }, [tableMode, consolidatedTeams, filteredData, sortConfig]);
-
-  const optU = useMemo(() => Array.from(new Set(allData
-    .filter(d => !selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe)
-    .map(d => String(d._ubsLabel || ''))
-  )).filter(u => Boolean(u) && u !== 'SEM UNIDADE' && u !== 'GERAL').sort(), [allData, selectedTipoEquipe]);
-  
-  const optE = useMemo(() => Array.from(new Set(allData
-    .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe))
-    .map(d => String(d._teamLabel || ''))
-  )).filter(e => Boolean(e) && !/^EQUIPE \d+$/.test(e) && !/^EQUIPE INE/.test(e)).sort(), [allData, selectedUnidade, selectedTipoEquipe]);
-
-  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
-  consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
-
-  const variablesChartData = variableColumns.map(col => {
-    let sum = 0, count = 0;
-    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
-    return { name: String(col).length > 22 ? String(col).substring(0, 20) + '...' : String(col), fullName: String(col), valor: Number((count > 0 ? sum / count : 0).toFixed(2)), equipesContabilizadas: count };
-  });
-
-  const teamsComparisonData = useMemo(() => {
-    let baseData = allData;
-    if (selectedUnidade) baseData = baseData.filter(d => d._ubsLabel === selectedUnidade);
-    if (selectedTipoEquipe) baseData = baseData.filter(d => d._tipoEquipe === selectedTipoEquipe);
-    if (selectedMes) baseData = baseData.filter(d => String(d[colMes]) === selectedMes);
-    if (selectedIndicador) baseData = baseData.filter(d => d._mappedIndicator === selectedIndicador);
-
-    const map = new Map<string, {sum: number, count: number, ubs: string}>();
-    baseData.forEach(r => {
-      const key = r._teamLabel;
-      if (/^EQUIPE \d+$/.test(key) || /^EQUIPE INE/.test(key) || r._ubsLabel === 'SEM UNIDADE' || r._ubsLabel === 'GERAL') return;
-
-      if (!map.has(key)) map.set(key, { sum: 0, count: 0, ubs: r._ubsLabel });
-      if (activeVariable) {
-        const v = parseNum(r[activeVariable]);
-        if (v !== null) { map.get(key)!.sum += v; map.get(key)!.count++; }
-      }
-    });
-
-    return Array.from(map.entries()).map(([name, val]) => ({
-      name: String(name).replace('EQUIPE', 'EQ').substring(0, 15) + (String(name).length > 15 ? '...' : ''),
-      fullName: `${name} (${val.ubs})`,
-      valor: val.count > 0 ? Number((val.sum / val.count).toFixed(2)) : 0
-    })).sort((a, b) => b.valor - a.valor);
-  }, [allData, selectedUnidade, selectedTipoEquipe, selectedMes, selectedIndicador, activeVariable, colMes]);
-
-  const lineChartData = (() => {
-    const byMonth = new Map<string, any[]>();
-    optM.forEach(m => byMonth.set(m, []));
-    
-    filteredDataForTrend.forEach(row => { 
-      const mes = String(row[colMes] || 'Geral'); 
-      if (byMonth.has(mes)) byMonth.get(mes)!.push(row); 
-    });
-    
-    return Array.from(byMonth.entries()).map(([mes, rows]) => {
-      if (rows.length === 0) return { name: mes, valor: null };
-      const tMap = new Map<string, { sum: number; count: number }>();
-      rows.forEach(r => {
-        if (!tMap.has(r._teamKey)) tMap.set(r._teamKey, { sum: 0, count: 0 });
-        if (activeVariable) { const n = parseNum(r[activeVariable]); if (n !== null) { tMap.get(r._teamKey)!.sum += n; tMap.get(r._teamKey)!.count++; } } 
-        else { tMap.get(r._teamKey)!.sum++; tMap.get(r._teamKey)!.count++; }
-      });
-      let sT = 0, cT = 0;
-      tMap.forEach(t => { if (t.count > 0) { sT += t.sum / t.count; cT++; } });
-      return { name: mes, valor: Number((activeVariable ? (cT > 0 ? sT / cT : 0) : tMap.size).toFixed(2)) };
-    });
-  })();
-
-  const summaryVariablesMap: Record<string, string> = {};
-  variableColumns.forEach(col => {
-    let sum = 0, count = 0;
-    consolidatedTeams.forEach(team => { if (team.varValues[String(col)] !== null && team.varValues[String(col)] !== undefined) { sum += team.varValues[String(col)]!; count++; } });
-    summaryVariablesMap[String(col)] = formatVal(Number((count > 0 ? sum / count : 0).toFixed(2)));
-  });
-
-  const statusPieData = [
-    { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
-    { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
-    { name: 'Satisfatório', total: statusCounts['Satisfatório'], color: '#F59E0B' },
-    { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
-  ].filter(d => d.total > 0);
-
-  if (files.length === 0) return (
-    <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
-      <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
-      <h2 className="text-xl font-medium text-slate-600">Nenhum dado hospedado no Firebase.</h2>
-      <p className="mt-2 text-sm">Vá ao módulo "Importar Dados" no menu lateral para iniciar.</p>
-    </div>
-  );
-
-  return (
-    <div className="space-y-4">
-      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center text-sm font-medium text-slate-700"><Filter className="h-4 w-4 mr-2 text-blue-600" /> Filtros e Variáveis:</div>
-          <div className={`px-3 py-1 rounded-full text-xs font-semibold border ${isSingleTeam ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>{isSingleTeam ? `🎯 Reais: ${consolidatedTeams[0]?.equipe || selectedEquipe}` : `📊 Média das ${totalEquipesUnicas} Equipes`}</div>
-        </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <select value={selectedUnidade} onChange={e => { setSelectedUnidade(e.target.value); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">🏥 Todas as Unidades</option>{optU.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <select value={selectedEquipe} onChange={e => setSelectedEquipe(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50"><option value="">👥 Todas as Equipes ({optE.length})</option>{optE.map(o => <option key={o} value={o}>{o}</option>)}</select>
-          <select value={selectedTipoEquipe} onChange={e => { setSelectedTipoEquipe(e.target.value); setSelectedUnidade(''); setSelectedEquipe(''); }} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50">
-            <option value="">🏷️ Todos tipos de equipe</option>
-            <option value="ESF">Apenas ESF</option>
-            <option value="EAP">Apenas EAP</option>
-          </select>
-
-          <select value={selectedIndicador} onChange={e => setSelectedIndicador(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
-            {optI.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-medium text-slate-900">
-            {optM.map(o => <option key={o} value={o}>📅 {o}</option>)}
-          </select>
-          <div className="w-full px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-blue-50/60 text-blue-950 flex flex-col justify-center overflow-hidden h-[42px]">
-            <span className="text-[9px] text-blue-600 font-bold uppercase tracking-wider leading-none mb-0.5">Variável Automática Selecionada</span>
-            <span className="truncate text-xs font-semibold" title={activeVariable || 'Nenhuma variável'}>{activeVariable || 'Aguardando seleção...'}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3"><div className="bg-slate-100 p-2.5 rounded-full shrink-0"><Users className="h-5 w-5 text-slate-700" /></div><div><p className="text-xs text-slate-700 font-semibold uppercase">Equipes</p><p className="text-xl font-bold text-slate-800">{totalEquipesUnicas}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm flex items-center space-x-3"><div className="bg-blue-100 p-2.5 rounded-full shrink-0"><Award className="h-5 w-5 text-blue-600" /></div><div><p className="text-xs text-blue-700 font-semibold uppercase">Ótimo</p><p className="text-xl font-bold text-blue-600">{statusCounts['Ótimo']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex items-center space-x-3"><div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div><div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3"><div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div><div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div></div>
-        <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1"><div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div><div><p className="text-xs text-red-700 font-semibold uppercase">Regular</p><p className="text-xl font-bold text-red-600">{statusCounts['Regular']}</p></div></div>
-      </section>
-
-      {variablesChartData.length > 0 && (
-        <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Valores Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {variablesChartData.map((v, i) => (
-              <div key={i} className={`p-4 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
-                <p className="text-xs text-slate-600 font-medium leading-tight" title={v.fullName}>{v.fullName}</p>
-                <p className={`text-2xl font-bold mt-2 ${v.fullName === activeVariable ? 'text-blue-900' : 'text-slate-800'}`}>{formatVal(v.valor)}</p>
-                <p className="text-[10px] text-slate-500 mt-1">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
-          <h3 className="text-base font-bold text-slate-800 mb-1">Comparativo por Equipe</h3>
-          <div style={{ height: 290 }}>
-            <ResponsiveContainer>
-              <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
-                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName || activeVariable]} />
-                <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                  {teamsComparisonData.map((e, i) => <Cell key={i} fill={'#1D4ED8'} />)}
-                  <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-          <h3 className="text-base font-bold text-slate-800 mb-1">Classificação Final</h3>
-          <div style={{ height: 290 }}>
-            {statusPieData.length ? (
-              <ResponsiveContainer>
-                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-                  <Pie data={statusPieData} cx="50%" cy="50%" outerRadius={65} dataKey="total" nameKey="name" label={({ name, value }) => `${name}: ${value}`}>
-                    {statusPieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <div className="h-full flex items-center justify-center text-slate-400 text-sm">Sem classificação</div>}
-          </div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
-          <h3 className="text-base font-bold text-slate-800 mb-1">Evolução Mensal ({activeVariable || 'Variável Focada'})</h3>
-          <div style={{ height: 280 }}>
-            <ResponsiveContainer>
-              <LineChart data={lineChartData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} padding={{ left: 20, right: 20 }} />
-                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(v:number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} />
-                <Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }} connectNulls={false}>
-                  <LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
-                </Line>
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-base font-bold text-slate-800 flex items-center"><FileText className="h-5 w-5 mr-2 text-blue-600" /> Relatório Completo (Planilha)</h3>
-          <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg text-xs">
-            <button onClick={() => setTableMode('consolidado')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'consolidado' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Por Equipe</button>
-            <button onClick={() => setTableMode('historico')} className={`px-3 py-1 rounded-md font-medium ${tableMode === 'historico' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>Histórico Mês</button>
-          </div>
-        </div>
-        
-        <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-lg">
-          <table className="w-full text-xs text-left whitespace-nowrap">
-            <thead className="text-slate-700 bg-slate-100 sticky top-0 shadow-sm z-10">
-              <tr>
-                <th onClick={() => requestSort('_ms')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Meses {sortConfig?.key === '_ms' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
-                <th onClick={() => requestSort('_eq')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Equipe {sortConfig?.key === '_eq' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
-                {columns.map(c => (
-                  <th key={String(c)} onClick={() => requestSort(String(c))} className={`px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group ${String(c) === activeVariable ? 'bg-blue-100' : ''}`}><div className="flex items-center">{String(c)} {sortConfig?.key === String(c) ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100 shrink-0" />}</div></th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {!isSingleTeam && totalEquipesUnicas > 1 && (
-                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold"><td className="px-3 py-2">RESUMO</td><td className="px-3 py-2">MÉDIA DAS EQUIPES</td>{columns.map(c => <td key={String(c)} className="px-3 py-2">{summaryVariablesMap[String(c)] !== undefined ? summaryVariablesMap[String(c)] : '-'}</td>)}</tr>
-              )}
-              {sortedTableData.slice(0, 150).map((r, i) => (
-                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-3 py-2 text-blue-800 bg-blue-50/20">{r._ms}</td>
-                  <td className="px-3 py-2 font-semibold bg-blue-50/10">{r._eq}</td>
-                  {columns.map(c => {
-                    let st = null;
-                    if (String(c).toLowerCase().includes('classifica') || String(c).toLowerCase().includes('conceito') || String(c).toLowerCase().includes('qualidade') || String(c).toLowerCase().includes('status')) { st = normStat(r[String(c)]); }
-                    if (!st && String(c) === activeVariable) { const v = parseNum(r[String(c)]); st = calcStatus(v, r._mappedIndicator); }
-                    return <td key={String(c)} className={`px-3 py-2 text-slate-600 ${String(c) === activeVariable ? 'bg-blue-50/40 font-semibold' : ''}`}>{st ? <span className="px-2 py-0.5 rounded-full text-[11px] font-bold text-white" style={{ backgroundColor: S_COLORS[st] }}>{String(r[String(c)] ?? '')}</span> : String(r[String(c)] ?? '')}</td>;
-                  })}
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
