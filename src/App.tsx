@@ -1248,7 +1248,14 @@ function ModuleDashboard({ files, bgClass }: any) {
             </div>
             <div className="p-0 overflow-y-auto flex-1 bg-slate-50">
               <ul className="divide-y divide-slate-200">
-                {consolidatedTeams.filter(t => t.status === activeModalStatus).map((t, idx) => (
+                {consolidatedTeams
+                  .filter(t => t.status === activeModalStatus)
+                  .sort((a, b) => {
+                    const valA = parseNum(a.consolidatedRow[activeVariable]) ?? 0;
+                    const valB = parseNum(b.consolidatedRow[activeVariable]) ?? 0;
+                    return valB - valA;
+                  })
+                  .map((t, idx) => (
                   <li key={idx} className="p-4 hover:bg-slate-100 transition-colors flex items-center justify-between">
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5 flex items-center"><Layout className="h-3 w-3 mr-1"/> {t.unidade}</p>
