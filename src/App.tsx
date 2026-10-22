@@ -32,16 +32,14 @@ const secondaryAuth = getAuth(secondaryApp);
 interface ImportedFile { id: string; name: string; lastModified?: number; data: any[]; }
 interface User { id: string; email: string; role: string; name: string; }
 
-// --- ESCUDO ANTI ECRÃ BRANCO (ERROR BOUNDARY) ---
+// --- ESCUDO ANTI ECRÃ BRANCO ---
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null, isClearing: boolean }> {
   constructor(props: any) { 
     super(props); 
     this.state = { hasError: false, error: null, isClearing: false }; 
   }
   
-  static getDerivedStateFromError(error: Error) { 
-    return { hasError: true, error }; 
-  }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
 
   handleEmergencyClear = async () => {
     this.setState({ isClearing: true });
@@ -53,9 +51,7 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
          batch.delete(qs.docs[i].ref);
          opCount++;
          if(opCount >= 400 || i === qs.docs.length - 1) { 
-            await batch.commit(); 
-            batch = writeBatch(db); 
-            opCount = 0; 
+            await batch.commit(); batch = writeBatch(db); opCount = 0; 
          }
       }
       window.location.reload();
@@ -73,16 +69,8 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Modo de Segurança Ativado</h2>
             <p className="text-sm text-slate-600 mb-6">O painel encontrou dados corrompidos e desligou a interface para evitar falhas. Utilize o botão abaixo para limpar a base de dados e recomeçar.</p>
-            
-            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">
-              {this.state.error?.toString()}
-            </div>
-
-            <button 
-              onClick={this.handleEmergencyClear} 
-              disabled={this.state.isClearing}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30"
-            >
+            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">{this.state.error?.toString()}</div>
+            <button onClick={this.handleEmergencyClear} disabled={this.state.isClearing} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30">
               {this.state.isClearing ? 'A Limpar a Nuvem...' : <><Trash2 className="mr-2 h-5 w-5"/> Forçar Limpeza da Nuvem</>}
             </button>
           </div>
@@ -100,7 +88,24 @@ const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Satisfatório': 2, 'B
 const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Satisfatório', 3: 'Bom', 4: 'Ótimo' };
 const C_COLORS = ['#118DFF', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#14B8A6', '#E66C37'];
 
-// Transforma hífens/traços em 0 matematicamente
+const normalizeStrForFind = (s: any) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+// Tabela de Lista Negra (Esconde colunas de identificação dos cartões)
+const isMetadataColumn = (colName: string) => {
+  const s = normalizeStrForFind(colName);
+  const exactMatches = ['cnes', 'ine', 'uf', 'municipio', 'cidade', 'ano', 'mes', 'competencia', 'periodo', 'estabelecimento', 'unidade', 'ubs', 'equipe', 'tipo', 'sigla', 'condicao', 'id'];
+  
+  if (exactMatches.includes(s)) return true;
+  if (s.startsWith('tipo de') || s.startsWith('tipo do')) return true;
+  if (s.startsWith('nome da') || s.startsWith('nome do')) return true;
+  if (s.startsWith('sigla da') || s.startsWith('sigla do')) return true;
+  if (s.startsWith('codigo ine') || s.startsWith('codigo da') || s.startsWith('codigo do')) return true;
+  if (s.includes('condicao das')) return true;
+  
+  return false;
+};
+
+// Transforma hífens em 0 matematicamente
 const parseNum = (v: any) => { 
   if (v === '-' || v === '–' || v === '—') return 0;
   if (typeof v === 'number' && !isNaN(v)) return v; 
@@ -165,8 +170,6 @@ const mapIndicatorName = (name: string) => {
   return String(name || '').toUpperCase();
 };
 
-const normalizeStrForFind = (s: any) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-
 // ==========================================
 // MOTOR DE LEITURA INFALÍVEL
 // ==========================================
@@ -179,8 +182,7 @@ const buildRows = (rows: any[][]) => {
   for (let i = 0; i < validRows.length; i++) {
     const rowStr = validRows[i].map(c => String(c || '').replace(/\r?\n|\r/g, ' ').trim().toUpperCase());
     if (rowStr.some(c => c === 'CNES' || c === 'ESTABELECIMENTO' || c === 'INE' || c === 'NOME DA EQUIPE' || c === 'EQUIPE')) {
-      hIdx = i;
-      break;
+      hIdx = i; break;
     }
   }
 
@@ -193,8 +195,7 @@ const buildRows = (rows: any[][]) => {
     if (!val) val = `EMPTY_${i}`;
     let base = val; let count = 1;
     while (seen.has(base)) { base = `${val} (${count})`; count++; }
-    seen.add(base);
-    return base;
+    seen.add(base); return base;
   });
 
   return validRows.slice(hIdx + 1).filter(r => {
@@ -205,10 +206,7 @@ const buildRows = (rows: any[][]) => {
   }).map(r => {
     const obj: any = {}; let hasData = false;
     headers.forEach((col, c) => { 
-      if (!col.startsWith('EMPTY_')) { 
-        obj[col] = r[c] ?? ''; 
-        if (String(obj[col]).trim() !== '') hasData = true; 
-      } 
+      if (!col.startsWith('EMPTY_')) { obj[col] = r[c] ?? ''; if (String(obj[col]).trim() !== '') hasData = true; } 
     });
     return hasData ? obj : null;
   }).filter(Boolean);
@@ -779,10 +777,9 @@ function ModuleDashboard({ files, bgClass }: any) {
     );
   }, [allData, selectedMes, selectedIndicador, colMes]);
 
-  // INTELIGÊNCIA DE RECUPERAÇÃO DE ORDEM ORIGINAL DO EXCEL
   const currentIndicatorColumns = useMemo(() => {
     if (baseFilterData.length === 0) return [];
-    // Recolher as chaves exatas da primeira linha garante que a ordem do Excel se mantém perfeita!
+    // Mantém a ordem exata do Excel buscando os cabeçalhos da primeira linha do indicador
     return Object.keys(baseFilterData[0]).filter(k => !k.startsWith('_') && !k.toUpperCase().includes('EMPTY'));
   }, [baseFilterData]);
 
@@ -846,31 +843,23 @@ function ModuleDashboard({ files, bgClass }: any) {
     return result;
   }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
 
-  // CORTE CIRÚRGICO - Ignora tudo o que está à esquerda de "PARÂMETRO POPULACIONAL"
+  // VARIÁVEIS A MOSTRAR - Aplica a Lista Negra e corta tudo o que está à esquerda de "PARÂMETRO"
   const variableColumns = useMemo(() => {
     if (currentIndicatorColumns.length === 0) return [];
     
-    // Procura o parâmetro na lista de colunas ordenada
-    const paramIndex = currentIndicatorColumns.findIndex(c => normalizeStrForFind(c).includes('parametro'));
-    
-    // Se encontrou o Parâmetro, corta tudo para trás. Se não, usa as colunas todas para tentar limpar a seguir.
-    let candidateCols = paramIndex !== -1 ? currentIndicatorColumns.slice(paramIndex) : currentIndicatorColumns;
-
-    // Dupla proteção: Lista Negra absoluta de palavras proibidas (Caso o paramIndex não funcione em algum ficheiro atípico)
-    const blocks = ['cnes', 'ibge', 'ine', 'ano', 'mês', 'mes', 'competência', 'competencia', 'período', 'periodo', 'uf', 'município', 'municipio', 'cidade', 'condição', 'sigla', 'tipo', 'estabelecimento', 'unidade', 'equipe', 'nome'];
-    
-    return candidateCols.filter(col => {
+    const filtered = currentIndicatorColumns.filter(col => {
       if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
-      const lower = normalizeStrForFind(col);
-      
-      // Abre exceção automática para o parâmetro (é o primeiro e é sagrado)
-      if (lower.includes('parametro')) return true;
-
-      if (blocks.some(w => lower.includes(w) || lower === w)) return false;
-      if ((lower.includes('codigo') || lower.includes('id ')) && lower.length < 15) return false;
-      
+      const normCol = normalizeStrForFind(col);
+      if (normCol.includes('parametro populacional') || normCol.includes('parametro')) return true; 
+      if (isMetadataColumn(col)) return false;
       return true; 
     });
+
+    const paramCol = filtered.find(c => normalizeStrForFind(c).includes('parametro'));
+    if (paramCol) {
+      return [paramCol, ...filtered.filter(c => c !== paramCol)];
+    }
+    return filtered;
   }, [currentIndicatorColumns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
 
   const activeVariable = useMemo(() => {
