@@ -209,7 +209,7 @@ const buildRows = (rows: any[][]) => {
 };
 
 // ==========================================
-// APLICAÇÃO ENCAPSULADA (COM LOGIN OBRIGATÓRIO E MELHORIAS MANITDAS)
+// APLICAÇÃO ENCAPSULADA (RESTAURADA: MODO RESTRITO/LOGIN OBRIGATÓRIO)
 // ==========================================
 function MainApp() {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -262,7 +262,7 @@ function MainApp() {
 
   if (!isLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500 font-medium">Conectando ao Firebase Nuvem...</div>;
 
-  // BLOQUEIO TOTAL - Exige Login para ver o Painel
+  // BLOQUEIO RESTRITO ATIVADO: Só passa quem fizer login
   if (!currentUser) return <LoginScreen bgClass={bgClass} />;
 
   const handleLogout = async () => { await signOut(auth); setFiles([]); };
@@ -346,14 +346,6 @@ function MainApp() {
         {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
       </main>
     </div>
-  );
-}
-
-export default function AppWrapper() {
-  return (
-    <ErrorBoundary>
-      <MainApp />
-    </ErrorBoundary>
   );
 }
 
