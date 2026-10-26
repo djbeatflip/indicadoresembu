@@ -842,41 +842,70 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [allData, selectedUnidade, selectedTipoEquipe, selectedEquipe, selectedIndicador]);
 
   const variableColumns = useMemo(() => {
-    if (currentIndicatorColumns.length === 0) return [];
+    if (!selectedIndicador || !allData) return [];
     
-    const paramIndex = currentIndicatorColumns.findIndex(c => normalizeStrForFind(c).includes('parametro'));
-    let candidateCols = paramIndex !== -1 ? currentIndicatorColumns.slice(paramIndex) : currentIndicatorColumns;
+    const indRows = allData.filter(d => d._mappedIndicator === selectedIndicador);
+    if (indRows.length === 0) return [];
 
-    return candidateCols.filter(col => {
-      if ([colUnidade, colEquipe, colIne, colTipoEquipe, colMes].includes(col)) return false;
-      const lower = normalizeStrForFind(col);
-      if (lower.includes('parametro')) return true;
-      if (isMetadataColumn(col)) return false;
-      return true; 
+    const keys = new Set<string>();
+    indRows.forEach(r => {
+      Object.keys(r).forEach(k => {
+        if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) {
+          keys.add(k);
+        }
+      });
     });
-  }, [currentIndicatorColumns, colUnidade, colEquipe, colIne, colTipoEquipe, colMes]);
-
+    return Array.from(keys);
+  }, [selectedIndicador, allData]);
+  
   const activeVariable = useMemo(() => {
-    if (!selectedIndicador || variableColumns.length === 0) return '';
-    const indL = String(selectedIndicador).toLowerCase();
+    if (!selectedIndicador || !allData) return '';
     
-    const findCol = (keywords: string[]) => variableColumns.find(c => {
-       const norm = normalizeStrForFind(c);
-       return keywords.some(k => norm.includes(k));
-    });
+    // 1. Filtra os dados de TODOS os meses para o indicador atual
+    const indRows = allData.filter(d => d._mappedIndicator === selectedIndicador);
+    if (indRows.length === 0) return '';
 
-    let found;
-    if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
-       found = findCol(['razao entre', 'razao']);
-    } else if (indL.includes('c7')) {
-       found = findCol(['somatorio', 'boa pratica']);
-    } else {
-       found = findCol(['pontuacao', 'pontua']);
+    // 2. Extrai o nome de TODAS as colunas que existem no histórico deste indicador
+    const keys = new Set<string>();
+    indRows.forEach(r => {
+      Object.keys(r).forEach(k => {
+        // Ignora colunas de sistema (começam por _) e colunas vazias
+        if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) {
+          keys.add(k);
+        }
+      });
+    });
+    const allIndCols = Array.from(keys);
+
+    // Função para remover acentos e facilitar a busca exata
+    const normalizeStr = (str: string) => 
+      str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    // 3. Ordem de PRIORIDADE MAXIMA baseada nas variáveis exatas da sua planilha
+    // O sistema vai procurar de cima para baixo. A primeira que encontrar, ele tranca e usa para todos os meses.
+    const priorityKeywords = [
+      ['pontuacao', 'pontua'],                 // Prioridade 1: O resultado final (como mostra na sua foto de Julho)
+      ['razao entre', 'razao'],                // Prioridade 2
+      ['somatorio', 'boa pratica'],            // Prioridade 3
+      ['parametro populacional', 'parametro'], // Prioridade 4 (como mostra na sua foto de Junho)
+      ['pessoas somente com cadastro'],        // Prioridade 5 (como mostra na sua foto de Maio)
+      ['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao'] // Casos de segurança
+    ];
+
+    // 4. Analisa as colunas disponíveis e seleciona a prioritária
+    for (const keywords of priorityKeywords) {
+      const foundCol = allIndCols.find(col => {
+        const normCol = normalizeStr(col);
+        return keywords.some(kw => normCol.includes(kw));
+      });
+      
+      // Se encontrou a coluna prioritária, bloqueia nela!
+      if (foundCol) return String(foundCol); 
     }
 
-    if (!found) found = findCol(['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao']);
-    return found ? String(found) : String(variableColumns[variableColumns.length - 1] || '');
-  }, [selectedIndicador, variableColumns]);
+    // 5. Último recurso: se não encontrar nenhuma das palavras acima, usa a última coluna de dados disponível
+    return String(allIndCols[allIndCols.length - 1] || '');
+  }, [selectedIndicador, allData]);
 
   const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
 
