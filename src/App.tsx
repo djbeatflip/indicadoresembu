@@ -133,24 +133,30 @@ const normStat = (v: any): string | null => {
 };
 
 const calcStatus = (v: number | null, ind: string): string | null => {
-  if (v === null) return null;
+  if (v === null || isNaN(v)) return null;
   const i = String(ind || '').toLowerCase();
-  if (i.includes('vinculo') || i.includes('vínculo')) {
-    if (v < 5) return 'Regular';
-    if (v < 7) return 'Satisfatório';
-    if (v <= 8.5) return 'Bom';
-    return 'Ótimo';
+
+  // 1. Vínculo e Acompanhamento Territorial
+  if (i.includes('vinculo') || i.includes('vínculo') || i.includes('territorial')) {
+    if (v > 85) return 'Ótimo';
+    if (v >= 65) return 'Bom'; 
+    if (v >= 45) return 'Satisfatório';
+    return 'Regular'; 
   }
-  if (i.includes('c1')) {
-    if (v <= 10 || v > 70) return 'Regular';
-    if (v <= 30) return 'Satisfatório';
-    if (v <= 50) return 'Bom';
-    return 'Ótimo';
+
+  // 2. C1 - MAIS ACESSO
+  if (i.includes('c1') || i.includes('acesso')) {
+    if (v > 50 && v <= 70) return 'Ótimo';
+    if (v > 30 && v <= 50) return 'Bom';
+    if (v > 10 && v <= 30) return 'Satisfatório'; 
+    return 'Regular'; 
   }
-  if (v <= 25) return 'Regular';
-  if (v <= 50) return 'Satisfatório';
-  if (v <= 75) return 'Bom';
-  return 'Ótimo';
+
+  // 3. Regra Padrão (C2, C3, C4, C5, C6 e C7)
+  if (v > 75) return 'Ótimo';
+  if (v > 50) return 'Bom';
+  if (v > 25) return 'Satisfatório'; 
+  return 'Regular'; 
 };
 
 const extMes = (f: string) => { const u = String(f || '').toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return String(f || '').split('-')[0].replace(/[0-9]/g, '').trim() || String(f || ''); };
@@ -857,19 +863,17 @@ function ModuleDashboard({ files, bgClass }: any) {
     });
     return Array.from(keys);
   }, [selectedIndicador, allData]);
-  
+
   const activeVariable = useMemo(() => {
     if (!selectedIndicador || !allData) return '';
     
-    // 1. Filtra os dados de TODOS os meses para o indicador atual
+    // 1. Analisa as colunas de todos os meses para não saltar
     const indRows = allData.filter(d => d._mappedIndicator === selectedIndicador);
     if (indRows.length === 0) return '';
 
-    // 2. Extrai o nome de TODAS as colunas que existem no histórico deste indicador
     const keys = new Set<string>();
     indRows.forEach(r => {
       Object.keys(r).forEach(k => {
-        // Ignora colunas de sistema (começam por _) e colunas vazias
         if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) {
           keys.add(k);
         }
@@ -877,34 +881,59 @@ function ModuleDashboard({ files, bgClass }: any) {
     });
     const allIndCols = Array.from(keys);
 
-    // Função para remover acentos e facilitar a busca exata
     const normalizeStr = (str: string) => 
       str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-    // 3. Ordem de PRIORIDADE MAXIMA baseada nas variáveis exatas da sua planilha
-    // O sistema vai procurar de cima para baixo. A primeira que encontrar, ele tranca e usa para todos os meses.
-    const priorityKeywords = [
-      ['pontuacao', 'pontua'],                 // Prioridade 1: O resultado final (como mostra na sua foto de Julho)
-      ['razao entre', 'razao'],                // Prioridade 2
-      ['somatorio', 'boa pratica'],            // Prioridade 3
-      ['parametro populacional', 'parametro'], // Prioridade 4 (como mostra na sua foto de Junho)
-      ['pessoas somente com cadastro'],        // Prioridade 5 (como mostra na sua foto de Maio)
-      ['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao'] // Casos de segurança
-    ];
+    const indL = String(selectedIndicador).toLowerCase();
+    
+    const checkInd = (num: string) => 
+       indL.includes(`c${num}`) || indL.includes(`indicador ${num}`) || indL.includes(`ind ${num}`) || indL.includes(`0${num}`) || indL.includes(`- ${num}`);
 
-    // 4. Analisa as colunas disponíveis e seleciona a prioritária
-    for (const keywords of priorityKeywords) {
-      const foundCol = allIndCols.find(col => {
-        const normCol = normalizeStr(col);
-        return keywords.some(kw => normCol.includes(kw));
-      });
-      
-      // Se encontrou a coluna prioritária, bloqueia nela!
-      if (foundCol) return String(foundCol); 
+    // Função que respeita a ordem de prioridade exata que passarmos
+    const findCol = (keywordGroups: string[][]) => {
+      for (const keywords of keywordGroups) {
+        const found = allIndCols.find(col => {
+          const normCol = normalizeStr(col);
+          return keywords.some(kw => normCol.includes(kw));
+        });
+        if (found) return String(found);
+      }
+      return undefined;
+    };
+
+    let foundVar;
+
+    // 2. Regra Exata: C2, C4 e C5 buscam RAZÃO primeiro
+    if (checkInd('2') || checkInd('4') || checkInd('5')) {
+       foundVar = findCol([ 
+         ['razao entre', 'razao'], 
+         ['pontuacao', 'pontua'] 
+       ]);
+    } 
+    // 3. Regra Exata: C7 busca SOMATÓRIO primeiro
+    else if (checkInd('7')) {
+       foundVar = findCol([ 
+         ['somatorio', 'boa pratica'], 
+         ['pontuacao', 'pontua'] 
+       ]);
+    } 
+    // 4. Regra Exata: Vínculo e C1 buscam PONTUAÇÃO, PARÂMETRO ou CADASTRO
+    else {
+       foundVar = findCol([ 
+         ['pontuacao', 'pontua'],
+         ['parametro populacional', 'parametro'],
+         ['pessoas somente com cadastro']
+       ]);
     }
 
-    // 5. Último recurso: se não encontrar nenhuma das palavras acima, usa a última coluna de dados disponível
-    return String(allIndCols[allIndCols.length - 1] || '');
+    // 5. Segurança geral se nada bater certo
+    if (!foundVar) {
+        foundVar = findCol([ 
+          ['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao'] 
+        ]);
+    }
+    
+    return foundVar ? foundVar : String(allIndCols[allIndCols.length - 1] || '');
   }, [selectedIndicador, allData]);
 
   const displayedVariables = useMemo(() => activeVariable ? [activeVariable] : [], [activeVariable]);
