@@ -903,28 +903,28 @@ function ModuleDashboard({ files, bgClass }: any) {
 
     let foundVar;
 
-    // 2. Regra Exata: C2, C4 e C5 buscam RAZÃO primeiro
-    if (checkInd('2') || checkInd('4') || checkInd('5')) {
-       foundVar = findCol([ 
-         ['razao entre', 'razao'], 
-         ['pontuacao', 'pontua'] 
-       ]);
-    } 
-    // 3. Regra Exata: C7 busca SOMATÓRIO primeiro
-    else if (checkInd('7')) {
-       foundVar = findCol([ 
-         ['somatorio', 'boa pratica'], 
-         ['pontuacao', 'pontua'] 
-       ]);
-    } 
-    // 4. Regra Exata: Vínculo e C1 buscam PONTUAÇÃO, PARÂMETRO ou CADASTRO
-    else {
-       foundVar = findCol([ 
-         ['pontuacao', 'pontua'],
-         ['parametro populacional', 'parametro'],
-         ['pessoas somente com cadastro']
-       ]);
-    }
+  // 2. Regra Exata: Gestantes (C3), C2, C4 e C5 buscam RAZÃO primeiro
+  if (checkInd('2') || checkInd('3') || checkInd('4') || checkInd('5') || indL.includes('gesta')) {
+    foundVar = findCol([ 
+      ['razao entre', 'razao'], 
+      ['pontuacao', 'pontua'] 
+    ]);
+ } 
+ // 3. Regra Exata: C7 busca SOMATÓRIO primeiro
+ else if (checkInd('7') || indL.includes('mulher') || indL.includes('cancer')) {
+    foundVar = findCol([ 
+      ['somatorio', 'boa pratica'], 
+      ['pontuacao', 'pontua'] 
+    ]);
+ } 
+ // 4. Regra Exata: Vínculo e C1 buscam PONTUAÇÃO, PARÂMETRO ou CADASTRO
+ else {
+    foundVar = findCol([ 
+      ['pontuacao', 'pontua'],
+      ['parametro populacional', 'parametro'],
+      ['pessoas somente com cadastro']
+    ]);
+ }
 
     // 5. Segurança geral se nada bater certo
     if (!foundVar) {
