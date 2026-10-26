@@ -1602,3 +1602,10 @@ function ModuleRanking({ files, bgClass }: any) {
     </div>
   );
 }
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
