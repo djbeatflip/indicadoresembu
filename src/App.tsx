@@ -32,16 +32,14 @@ const secondaryAuth = getAuth(secondaryApp);
 interface ImportedFile { id: string; name: string; lastModified?: number; data: any[]; }
 interface User { id: string; email: string; role: string; name: string; }
 
-// --- ESCUDO ANTI ECRÃ BRANCO (ERROR BOUNDARY) ---
+// --- ESCUDO ANTI ECRÃ BRANCO ---
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null, isClearing: boolean }> {
   constructor(props: any) { 
     super(props); 
     this.state = { hasError: false, error: null, isClearing: false }; 
   }
   
-  static getDerivedStateFromError(error: Error) { 
-    return { hasError: true, error }; 
-  }
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
 
   handleEmergencyClear = async () => {
     this.setState({ isClearing: true });
@@ -53,9 +51,7 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
          batch.delete(qs.docs[i].ref);
          opCount++;
          if(opCount >= 400 || i === qs.docs.length - 1) { 
-            await batch.commit(); 
-            batch = writeBatch(db); 
-            opCount = 0; 
+            await batch.commit(); batch = writeBatch(db); opCount = 0; 
          }
       }
       window.location.reload();
@@ -73,16 +69,8 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Modo de Segurança Ativado</h2>
             <p className="text-sm text-slate-600 mb-6">O painel encontrou dados corrompidos e desligou a interface para evitar falhas. Utilize o botão abaixo para limpar a base de dados e recomeçar.</p>
-            
-            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">
-              {this.state.error?.toString()}
-            </div>
-
-            <button 
-              onClick={this.handleEmergencyClear} 
-              disabled={this.state.isClearing}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30"
-            >
+            <div className="bg-slate-50 p-4 rounded-lg text-left mb-6 overflow-auto max-h-32 text-[10px] font-mono text-red-400 border border-red-100">{this.state.error?.toString()}</div>
+            <button onClick={this.handleEmergencyClear} disabled={this.state.isClearing} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition-all flex justify-center items-center shadow-lg hover:shadow-red-500/30">
               {this.state.isClearing ? 'A Limpar a Nuvem...' : <><Trash2 className="mr-2 h-5 w-5"/> Forçar Limpeza da Nuvem</>}
             </button>
           </div>
@@ -225,7 +213,7 @@ const buildRows = (rows: any[][]) => {
 };
 
 // ==========================================
-// APLICAÇÃO ENCAPSULADA
+// APLICAÇÃO ENCAPSULADA (COM MODO PÚBLICO)
 // ==========================================
 function MainApp() {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -236,7 +224,30 @@ function MainApp() {
   const [usersList, setUsersList] = useState<User[]>([]);
   const [sysTheme, setSysTheme] = useState('blue');
 
+  // Lógica de Leitura Mista (Carrega dados mesmo que visitante não esteja logado)
   useEffect(() => {
+    const loadPublicData = async () => {
+      try {
+        const setDocSnap = await getDoc(doc(db, 'settings', 'layout'));
+        if (setDocSnap.exists()) setSysTheme(setDocSnap.data().themeColor);
+
+        const filesSnap = await getDocs(collection(db, 'dados_siaps'));
+        const agrupados = new Map<string, ImportedFile>();
+        filesSnap.docs.forEach(d => {
+           const row = d.data();
+           const fileName = row._arquivoOrigem + '.xlsx';
+           if(!agrupados.has(fileName)) { agrupados.set(fileName, { id: fileName, name: fileName, data: [] }); }
+           agrupados.get(fileName)!.data.push(row);
+        });
+        setFiles(Array.from(agrupados.values()));
+      } catch (e) {
+        console.error("Erro ao carregar dados. Verifique as regras do Firestore.", e);
+      }
+      setIsLoaded(true);
+    };
+
+    loadPublicData();
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -246,41 +257,30 @@ function MainApp() {
           } else {
             setCurrentUser({ id: user.uid, email: user.email!, role: 'Administrador', name: 'Administrador' });
           }
-
-          const setDocSnap = await getDoc(doc(db, 'settings', 'layout'));
-          if (setDocSnap.exists()) setSysTheme(setDocSnap.data().themeColor);
-
-          const filesSnap = await getDocs(collection(db, 'dados_siaps'));
-          const agrupados = new Map<string, ImportedFile>();
-          filesSnap.docs.forEach(d => {
-             const row = d.data();
-             const fileName = row._arquivoOrigem + '.xlsx';
-             if(!agrupados.has(fileName)) { agrupados.set(fileName, { id: fileName, name: fileName, data: [] }); }
-             agrupados.get(fileName)!.data.push(row);
-          });
-          setFiles(Array.from(agrupados.values()));
-
           const usersSnap = await getDocs(collection(db, 'users'));
           setUsersList(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
-        } catch (e) {
-          console.error("Erro ao carregar dados:", e);
-        }
+        } catch (e) { console.error(e); }
       } else {
         setCurrentUser(null);
       }
-      setIsLoaded(true);
     });
     return () => unsubscribe();
   }, []);
 
+  // Se logar com sucesso enquanto estava na aba de Login, muda logo para Dashboard
+  useEffect(() => {
+    if (currentUser && activeModule === 'login') setActiveModule('dashboard');
+  }, [currentUser, activeModule]);
+
   const themes: Record<string, string> = { blue: 'bg-blue-600', emerald: 'bg-emerald-600', violet: 'bg-violet-600', slate: 'bg-slate-700' };
   const bgClass = themes[sysTheme] || themes.blue;
 
-  if (!isLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500 font-medium">Conectando ao Firebase Nuvem...</div>;
+  if (!isLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500 font-medium">Conectando ao banco de dados público...</div>;
 
-  if (!currentUser) return <LoginScreen bgClass={bgClass} />;
-
-  const handleLogout = async () => { await signOut(auth); setFiles([]); };
+  const handleLogout = async () => { 
+    await signOut(auth); 
+    setActiveModule('dashboard'); // Quando faz logout, volta à vista pública
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex overflow-hidden">
@@ -303,7 +303,7 @@ function MainApp() {
         </div>
         
         <div className="p-4 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden scrollbar-thin">
-          {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Módulos</p>}
+          {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-2">Público</p>}
           <button onClick={() => setActiveModule('dashboard')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'dashboard' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Dashboard SIAPS" : ""}>
             <Layout className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Dashboard SIAPS</span>}
           </button>
@@ -312,15 +312,18 @@ function MainApp() {
             <Trophy className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Ranking</span>}
           </button>
 
-          {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
-            <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
-              <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
-            </button>
-          )}
-
-          {(currentUser.role === 'Administrador') && (
+          {/* Menus Restritos a Utilizadores Logados */}
+          {currentUser && (currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
             <>
               {isSidebarOpen ? ( <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 mt-6">Administração</p> ) : ( <div className="h-px bg-slate-800 my-4 mx-2"></div> )}
+              <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
+                <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
+              </button>
+            </>
+          )}
+
+          {currentUser && currentUser.role === 'Administrador' && (
+            <>
               <button onClick={() => setActiveModule('users')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'users' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Usuários" : ""}>
                 <Users className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Usuários</span>}
               </button>
@@ -334,31 +337,35 @@ function MainApp() {
           )}
         </div>
 
+        {/* Rodapé da Sidebar (Botão de Login Público ou Info do User Logado) */}
         <div className="p-4 border-t border-slate-800 bg-slate-950">
-          {isSidebarOpen ? (
-            <div className="flex items-center justify-between">
+          {currentUser ? (
+             <div className={`flex items-center ${isSidebarOpen ? 'justify-between' : 'justify-center flex-col space-y-4'}`}>
               <div className="flex items-center space-x-3 overflow-hidden">
-                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser?.name || 'User'}>{(currentUser?.name || 'U').charAt(0).toUpperCase()}</div>
-                <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser?.name || 'Usuário'}</p><p className="text-[10px] text-slate-500 truncate">{currentUser?.role || 'Acesso'}</p></div>
+                <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser.name}>{(currentUser.name || 'U').charAt(0).toUpperCase()}</div>
+                {isSidebarOpen && <div className="truncate w-28"><p className="text-xs font-bold text-slate-200 truncate">{currentUser.name}</p><p className="text-[10px] text-slate-500 truncate">{currentUser.role}</p></div>}
               </div>
-              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
+              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair da Conta"><LogOut className="h-4 w-4 shrink-0" /></button>
             </div>
           ) : (
-            <div className="flex flex-col items-center space-y-4">
-              <div className={`h-8 w-8 rounded-full shrink-0 ${bgClass} flex items-center justify-center text-white font-bold text-xs`} title={currentUser?.name || 'User'}>{(currentUser?.name || 'U').charAt(0).toUpperCase()}</div>
-              <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 bg-slate-900 rounded-lg transition-colors" title="Sair do Sistema"><LogOut className="h-4 w-4 shrink-0" /></button>
-            </div>
+            <button onClick={() => setActiveModule('login')} className={`w-full flex items-center ${isSidebarOpen ? 'justify-start px-2' : 'justify-center'} py-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800`} title="Acesso Restrito">
+              <LogIn className="h-5 w-5 shrink-0" />
+              {isSidebarOpen && <span className="ml-3 text-sm font-medium">Acesso Restrito</span>}
+            </button>
           )}
         </div>
       </aside>
 
+      {/* ÁREA PRINCIPAL (Renders baseados no activeModule) */}
       <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
         {activeModule === 'dashboard' && <ModuleDashboard files={files} bgClass={bgClass} />}
         {activeModule === 'ranking' && <ModuleRanking files={files} bgClass={bgClass} />}
-        {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
-        {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} bgClass={bgClass} />}
-        {activeModule === 'access' && <ModuleAccess bgClass={bgClass} />}
-        {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
+        {activeModule === 'login' && !currentUser && <LoginScreen bgClass={bgClass} onBack={() => setActiveModule('dashboard')} />}
+        
+        {currentUser && activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
+        {currentUser && activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} bgClass={bgClass} />}
+        {currentUser && activeModule === 'access' && <ModuleAccess bgClass={bgClass} />}
+        {currentUser && activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
       </main>
     </div>
   );
@@ -373,9 +380,9 @@ export default function AppWrapper() {
 }
 
 // ==========================================
-// TELA DE LOGIN & RECUPERAÇÃO DE SENHA
+// TELA DE LOGIN & RECUPERAÇÃO DE SENHA (AGORA EMBUTIDA NO MAIN)
 // ==========================================
-function LoginScreen({ bgClass }: any) {
+function LoginScreen({ bgClass, onBack }: any) {
   const [isRegister, setIsRegister] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -416,10 +423,14 @@ function LoginScreen({ bgClass }: any) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <div className="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-slate-200">
-        <div className="flex justify-center mb-6"><div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}><Shield className={`h-10 w-10 text-slate-800`} /></div></div>
-        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">Indicadores APS<br/><span className="text-lg font-medium text-slate-500">Embu das Artes</span></h2>
+    <div className="flex flex-col items-center justify-center min-h-[80vh]">
+      <div className="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-slate-200 relative">
+        <button onClick={onBack} className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors" title="Voltar ao Painel Público">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        
+        <div className="flex justify-center mb-6 mt-4"><div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}><Shield className={`h-10 w-10 text-slate-800`} /></div></div>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">Área Restrita<br/><span className="text-lg font-medium text-slate-500">Administração</span></h2>
         
         {isForgot ? (
           <>
@@ -434,7 +445,7 @@ function LoginScreen({ bgClass }: any) {
           </>
         ) : (
           <>
-            <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
+            <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Registo de Administrador' : 'Insira as credenciais'}</p>
             {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (<div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>)}
@@ -446,7 +457,7 @@ function LoginScreen({ bgClass }: any) {
                 </div>
                 <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
               </div>
-              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>{isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}</button>
+              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>{isRegister ? 'Criar Conta' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}</button>
             </form>
             <div className="mt-6 text-center"><button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">{isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}</button></div>
           </>
@@ -733,7 +744,6 @@ function ModuleDashboard({ files, bgClass }: any) {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [tableMode, setTableMode] = useState<'consolidado' | 'historico'>('consolidado');
   
-  // Controle do modal do Status
   const [activeModalStatus, setActiveModalStatus] = useState<string | null>(null);
 
   const optM = useMemo(() => Array.from(new Set(allData.map(d => String(d._mesOrigem || '')))).filter(Boolean).sort((a, b) => (monthOrder[a] || 99) - (monthOrder[b] || 99)), [allData]);
@@ -1034,7 +1044,7 @@ function ModuleDashboard({ files, bgClass }: any) {
     <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
       <BarChart2 className="h-20 w-20 mb-4 opacity-20"/>
       <h2 className="text-xl font-medium text-slate-600">Nenhum dado hospedado no Firebase.</h2>
-      <p className="mt-2 text-sm">Vá ao módulo "Importar Dados" no menu lateral para iniciar.</p>
+      <p className="mt-2 text-sm">Faça login e vá ao módulo "Importar Dados" para iniciar.</p>
     </div>
   );
 
@@ -1046,9 +1056,10 @@ function ModuleDashboard({ files, bgClass }: any) {
         <p className="text-sm text-slate-500 mb-6 max-w-md text-center">O sistema detetou que as planilhas guardadas atualmente estão corrompidas, devido a cabeçalhos mal formatados na importação anterior.</p>
         <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 text-sm text-slate-700 space-y-3 w-full max-w-md">
           <p className="font-bold text-slate-800">Para repor o funcionamento normal do painel:</p>
-          <p>1. Vá ao menu lateral esquerdo e clique em <b>"Importar Dados"</b>.</p>
-          <p>2. Clique no botão vermelho <b>"Apagar TUDO da Nuvem"</b> (ao lado da lista de planilhas).</p>
-          <p>3. Selecione e faça o upload das planilhas originais novamente.</p>
+          <p>1. Faça o Login Restrito.</p>
+          <p>2. Vá ao menu esquerdo e clique em <b>"Importar Dados"</b>.</p>
+          <p>3. Clique no botão vermelho <b>"Apagar TUDO da Nuvem"</b>.</p>
+          <p>4. Faça o upload das planilhas originais novamente.</p>
         </div>
       </div>
     );
