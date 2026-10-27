@@ -1948,7 +1948,6 @@ function ModuleRanking({ files, bgClass }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
-  // Ignora colunas de "Tipo de Estabelecimento" ou "CNES" e verifica se o conteúdo não é "CENTRO DE SAUDE/UNIDADE BASICA"
   const colUnidade = useMemo(() => {
     const candidates = columns.filter(c => {
       const s = normalizeStrForFind(c);
@@ -1991,7 +1990,6 @@ function ModuleRanking({ files, bgClass }: any) {
       const ic = colIne ? normIne(r[colIne]) : '';
       let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
       
-      // Busca na linha o nome real da UBS caso alguma planilha tenha cabeçalho diferente
       let ubs = 'GERAL';
       if (colUnidade && r[colUnidade]) {
         const val = String(r[colUnidade]).replace(/\s+/g, ' ').trim().toUpperCase();
@@ -2080,13 +2078,12 @@ function ModuleRanking({ files, bgClass }: any) {
         });
         
         let found;
-        if (indL.includes('vinculo') || indL.includes('acompanhamento')) {
-           found = findCol(['nota final', 'nota', 'pontuacao final', 'resultado']);
-        } else if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+        if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
            found = findCol(['razao entre', 'razao']);
         } else if (indL.includes('c7')) {
            found = findCol(['somatorio', 'boa pratica']);
         } else {
+           // Para Vínculo (e C1, C3, C6), pega exatamente a coluna PONTUAÇÃO igual ao Dashboard
            found = findCol(['pontuacao', 'pontua']);
         }
         if (!found) found = findCol(['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao']);
@@ -2102,20 +2099,32 @@ function ModuleRanking({ files, bgClass }: any) {
 
   const getStatusForRow = (row: any, ind: string) => {
     const indL = normalizeStrForFind(ind);
-    const vCol = getActiveVarForIndicator(ind);
 
-    // Para Vínculo e Acompanhamento, prioriza o cálculo pela Nota Final (8.5 / 7.0 / 5.0)
-    if ((indL.includes('vinculo') || indL.includes('acompanhamento')) && vCol && row[String(vCol)] !== undefined) {
-      return calcStatus(parseNum(row[String(vCol)]), ind);
+    // 1. Se for Vínculo ou Acompanhamento, busca diretamente pela coluna numérica de nota/pontuação ou calcula pelo valor da linha
+    if (indL.includes('vinculo') || indL.includes('acompanhamento')) {
+      const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
+      const notaCol = rowKeys.find(c => {
+        const s = normalizeStrForFind(c);
+        return s.includes('pontua') || s.includes('nota') || s.includes('resultado') || s.includes('valor');
+      });
+      if (notaCol && row[notaCol] !== undefined && String(row[notaCol]).trim() !== '') {
+        return calcStatus(parseNum(row[notaCol]), ind);
+      }
     }
 
+    // 2. Para os demais indicadores ou se achar coluna de status textual
     const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
     const statusCol = rowKeys.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
     if (statusCol) {
       const st = normStat(row[statusCol]);
       if (st) return st === 'Satisfatório' ? 'Suficiente' : st;
     }
-    if (vCol) return calcStatus(parseNum(row[String(vCol)]), ind);
+
+    const vCol = getActiveVarForIndicator(ind);
+    if (vCol && row[String(vCol)] !== undefined && String(row[String(vCol)]).trim() !== '') {
+      return calcStatus(parseNum(row[String(vCol)]), ind);
+    }
+
     return null;
   };
 
