@@ -1628,11 +1628,11 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
   });
 
   const statusPieData = [
-    { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
-    { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
-    { name: 'Suficiente', total: statusCounts['Suficiente'], color: '#F59E0B' },
-    { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
-  ].filter(d => d.total > 0);
+    { name: 'Ótimo', value: statusCounts['Ótimo'], color: '#3B82F6' },
+    { name: 'Bom', value: statusCounts['Bom'], color: '#10B981' },
+    { name: 'Suficiente', value: statusCounts['Suficiente'], color: '#F59E0B' },
+    { name: 'Regular', value: statusCounts['Regular'], color: '#EF4444' }
+  ].filter(d => d.value > 0);
 
   if (files.length === 0) return (
     <div className="h-[80vh] flex flex-col items-center justify-center text-slate-400">
@@ -1754,33 +1754,57 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
         </section>
       )}
 
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+<section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-2 overflow-hidden">
           <h3 className="text-base font-bold text-slate-800 mb-1">Comparativo por Equipe</h3>
-          <div style={{ height: 290 }}>
-            <ResponsiveContainer>
-              <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
-                <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(val:number, _n:string, p:any) => [formatVal(val), p.payload.fullName || activeVariable]} />
-                <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                  {teamsComparisonData.map((e, i) => <Cell key={i} fill={'#1D4ED8'} />)}
-                  <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="w-full overflow-x-auto pb-2">
+            <div style={{ minWidth: teamsComparisonData.length > 20 ? `${teamsComparisonData.length * 32}px` : '100%', height: 290 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
+                  <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(val: number, _n: string, p: any) => [formatVal(val), p.payload.fullName || activeVariable]} />
+                  <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                    {teamsComparisonData.map((_e, i) => <Cell key={i} fill="#1D4ED8" />)}
+                    <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v: number) => formatVal(v)} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
         
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
           <h3 className="text-base font-bold text-slate-800 mb-1">Classificação Final</h3>
-          <div style={{ height: 290 }}>
+          <div className="w-full" style={{ height: 290 }}>
             {statusPieData.length ? (
-              <ResponsiveContainer>
-                <PieChart margin={{ top: 20, right: 30, left: 30, bottom: 20 }}>
-                  <Pie data={statusPieData} cx="50%" cy="50%" outerRadius={65} dataKey="total" nameKey="name" label={({ name, value }) => `${name}: ${value}`}>
-                    {statusPieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart margin={{ top: 15, right: 35, left: 35, bottom: 5 }}>
+                  <Pie
+                    data={statusPieData.map((d: any) => ({
+                      ...d,
+                      value: Number(d.value ?? d.valor ?? d.count ?? 0)
+                    }))}
+                    cx="50%"
+                    cy="45%"
+                    outerRadius={58}
+                    dataKey="value"
+                    nameKey="name"
+                    isAnimationActive={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    labelLine={true}
+                  >
+                    {statusPieData.map((entry: any, index: number) => {
+                      const colorMap: Record<string, string> = {
+                        'Ótimo': '#3B82F6',
+                        'Bom': '#10B981',
+                        'Suficiente': '#F59E0B',
+                        'Satisfatório': '#F59E0B',
+                        'Regular': '#EF4444'
+                      };
+                      return <Cell key={`cell-${index}`} fill={entry.color || entry.fill || colorMap[entry.name] || '#94A3B8'} />;
+                    })}
                   </Pie>
                   <Tooltip />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" />
@@ -1793,14 +1817,14 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm lg:col-span-3">
           <h3 className="text-base font-bold text-slate-800 mb-1">Evolução Mensal ({activeVariable || 'Variável Focada'})</h3>
           <div style={{ height: 280 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%">
               <LineChart data={lineChartData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} padding={{ left: 20, right: 20 }} />
                 <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(v:number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} />
+                <Tooltip formatter={(v: number) => [formatVal(v), isSingleTeam ? 'Equipe' : 'Média']} />
                 <Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} dot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: '#fff' }} connectNulls={false}>
-                  <LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v:number) => formatVal(v)} />
+                  <LabelList dataKey="valor" position="top" offset={12} fontSize={12} fontWeight="bold" formatter={(v: number) => formatVal(v)} />
                 </Line>
               </LineChart>
             </ResponsiveContainer>
