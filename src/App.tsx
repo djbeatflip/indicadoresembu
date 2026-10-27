@@ -715,6 +715,7 @@ function ModuleDashboard({ files, bgClass }: any) {
   }, [rawAllData, colUnidade, colEquipe, colIne, colTipoEquipe, colIndicador, isCorrupted]);
 
   const [selectedUnidade, setSelectedUnidade] = useState('');
+  const [isResumoOpen, setIsResumoOpen] = useState(true);
   const [selectedTipoEquipe, setSelectedTipoEquipe] = useState('');
   const [selectedEquipe, setSelectedEquipe] = useState('');
   const [selectedMes, setSelectedMes] = useState('');
@@ -862,7 +863,11 @@ function ModuleDashboard({ files, bgClass }: any) {
     const keys = new Set<string>();
     indRows.forEach(r => {
       Object.keys(r).forEach(k => {
-        if (!k.startsWith('_') && !k.toUpperCase().includes('EMPTY')) {
+        if (
+          !k.startsWith('_') && 
+          !k.toUpperCase().includes('EMPTY') && 
+          !isMetadataColumn(k)
+        ) {
           keys.add(k);
         }
       });
@@ -1161,16 +1166,32 @@ function ModuleDashboard({ files, bgClass }: any) {
 
       {variablesChartData.length > 0 && (
         <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-3"><div className="flex items-center space-x-2"><BarChart2 className="h-4 w-4 text-blue-600" /><h3 className="text-sm font-bold text-slate-800">{isSingleTeam ? `Valores Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}</h3></div></div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {variablesChartData.map((v, i) => (
-              <div key={i} className={`p-4 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
-                <p className="text-xs text-slate-600 font-medium leading-tight" title={v.fullName}>{v.fullName}</p>
-                <p className={`text-2xl font-bold mt-2 ${v.fullName === activeVariable ? 'text-blue-900' : 'text-slate-800'}`}>{formatVal(v.valor)}</p>
-                <p className="text-[10px] text-slate-500 mt-1">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
-              </div>
-            ))}
+          <div 
+            onClick={() => setIsResumoOpen(!isResumoOpen)} 
+            className={`flex justify-between items-center cursor-pointer select-none group ${isResumoOpen ? 'mb-3' : ''}`}
+          >
+            <div className="flex items-center space-x-2">
+              <BarChart2 className="h-4 w-4 text-blue-600" />
+              <h3 className="text-sm font-bold text-slate-800">
+                {isSingleTeam ? `Valores Reais (${consolidatedTeams[0]?.equipe || selectedEquipe})` : 'Resumo das Variáveis (Média)'}
+              </h3>
+            </div>
+            <button className="p-1 rounded-lg text-slate-400 group-hover:text-slate-600 group-hover:bg-slate-100 transition-colors">
+              {isResumoOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
           </div>
+          
+          {isResumoOpen && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {variablesChartData.map((v, i) => (
+                <div key={i} className={`p-4 rounded-lg border transition-all ${v.fullName === activeVariable ? 'border-blue-600 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-slate-50/60'}`}>
+                  <p className="text-xs text-slate-600 font-medium leading-tight" title={v.fullName}>{v.fullName}</p>
+                  <p className={`text-2xl font-bold mt-2 ${v.fullName === activeVariable ? 'text-blue-900' : 'text-slate-800'}`}>{formatVal(v.valor)}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{isSingleTeam ? 'Valor real da equipe' : `Média de ${v.equipesContabilizadas} equipes`}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -1239,9 +1260,10 @@ function ModuleDashboard({ files, bgClass }: any) {
         
         <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-lg">
           <table className="w-full text-xs text-left whitespace-nowrap">
-            <thead className="text-slate-700 bg-slate-100 sticky top-0 shadow-sm z-10">
+          <thead className="text-slate-700 bg-slate-100 sticky top-0 shadow-sm z-10">
               <tr>
                 <th onClick={() => requestSort('_ms')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Meses {sortConfig?.key === '_ms' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
+                <th onClick={() => requestSort('_ubsLabel')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Unidade {sortConfig?.key === '_ubsLabel' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
                 <th onClick={() => requestSort('_eq')} className="px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group"><div className="flex items-center">Equipe {sortConfig?.key === '_eq' ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100" />}</div></th>
                 {displayColumns.map(c => (
                   <th key={String(c)} onClick={() => requestSort(String(c))} className={`px-3 py-2.5 cursor-pointer hover:bg-slate-200 select-none group ${String(c) === activeVariable ? 'bg-blue-100' : ''}`}><div className="flex items-center">{String(c)} {sortConfig?.key === String(c) ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 ml-1 text-blue-600 shrink-0" />) : <ArrowUpDown className="h-3 w-3 ml-1 text-slate-300 opacity-0 group-hover:opacity-100 shrink-0" />}</div></th>
@@ -1250,11 +1272,21 @@ function ModuleDashboard({ files, bgClass }: any) {
             </thead>
             <tbody>
               {!isSingleTeam && totalEquipesUnicas > 1 && (
-                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold"><td className="px-3 py-2">RESUMO</td><td className="px-3 py-2">MÉDIA DAS EQUIPES</td>{displayColumns.map(c => <td key={String(c)} className="px-3 py-2">{summaryVariablesMap[String(c)] !== undefined ? summaryVariablesMap[String(c)] : '-'}</td>)}</tr>
+                <tr className="bg-blue-50/90 border-b border-blue-200 font-bold">
+                  <td className="px-3 py-2">RESUMO</td>
+                  <td className="px-3 py-2">{selectedUnidade || 'TODAS AS UNIDADES'}</td>
+                  <td className="px-3 py-2">MÉDIA DAS EQUIPES</td>
+                  {displayColumns.map(c => (
+                    <td key={String(c)} className="px-3 py-2">
+                      {summaryVariablesMap[String(c)] !== undefined ? summaryVariablesMap[String(c)] : '-'}
+                    </td>
+                  ))}
+                </tr>
               )}
               {sortedTableData.slice(0, 150).map((r, i) => (
                 <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2 text-blue-800 bg-blue-50/20">{r._ms}</td>
+                  <td className="px-3 py-2 text-slate-600 bg-blue-50/10">{r._ubsLabel}</td>
                   <td className="px-3 py-2 font-semibold bg-blue-50/10">{r._eq}</td>
                   {displayColumns.map(c => {
                     let rawVal = String(r[String(c)] ?? '').trim();
