@@ -1792,7 +1792,7 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
                     dataKey="value"
                     nameKey="name"
                     isAnimationActive={false}
-                    label={({ name, value }) => `${name}: ${value}`}
+                    label={({ value }) => value}
                     labelLine={true}
                   >
                     {statusPieData.map((entry: any, index: number) => {
