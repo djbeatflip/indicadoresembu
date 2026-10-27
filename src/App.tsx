@@ -344,11 +344,11 @@ function MainApp() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-        {activeModule === 'dashboard' && <ModuleDashboard files={files} bgClass={bgClass} />}
-        {activeModule === 'ranking' && <ModuleRanking files={files} bgClass={bgClass} />}
+        {activeModule === 'dashboard' && <ModuleDashboard files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} currentUser={currentUser} usersList={usersList} />}
+        {activeModule === 'ranking' && <ModuleRanking files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} />}
         {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
-        {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} bgClass={bgClass} />}
-        {activeModule === 'access' && <ModuleAccess bgClass={bgClass} />}
+        {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
+        {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
         {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
       </main>
     </div>
@@ -577,55 +577,608 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
   );
 }
 
-function ModuleUsers({ usersList, setUsersList, bgClass }: any) {
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault(); 
-    const frm = e.target as any;
-    const email = frm.email.value;
-    const pass = frm.pass.value;
-    const name = frm.nome.value;
-    const role = frm.role.value;
-    try {
-      const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
-      const newUid = userCred.user.uid;
-      const newUser = { email, name, role };
-      await setDoc(doc(db, 'users', newUid), newUser);
-      setUsersList([...usersList, { id: newUid, ...newUser }]);
-      frm.reset();
-      alert('Usuário cadastrado com sucesso!');
-    } catch (err: any) { alert('Erro ao cadastrar: ' + err.message); }
+const DEFAULT_ROLES = [
+  { name: 'Administrador', scope: 'geral', desc: 'Acesso total ao sistema, unidades, importação e configurações.', unidades: [], equipes: [] },
+  { name: 'Coordenador', scope: 'geral', desc: 'Visualização de todas as unidades e importação de relatórios.', unidades: [], equipes: [] },
+  { name: 'Gerente', scope: 'unidade', desc: 'Acesso restrito aos dados e equipes das Unidades selecionadas.', unidades: [], equipes: [] },
+  { name: 'Enfermeiro', scope: 'equipe', desc: 'Acesso restrito exclusivamente às Equipes selecionadas.', unidades: [], equipes: [] },
+  { name: 'Médico', scope: 'equipe', desc: 'Acesso restrito exclusivamente às Equipes selecionadas.', unidades: [], equipes: [] },
+  { name: 'Leitor', scope: 'geral', desc: 'Visualização geral do painel sem permissão de edição.', unidades: [], equipes: [] }
+];
+
+function normAccessStr(v: any) {
+  return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function extractUnidadesAndEquipes(files: any[]) {
+  const raw = (files || []).flatMap((f: any) => f.data || []);
+  const cols = Array.from(new Set(raw.flatMap(Object.keys))).filter(Boolean) as string[];
+
+  const cUnid = cols.find(c => {
+    const s = normAccessStr(c);
+    if (s.includes('tipo') || s.includes('cnes') || s.includes('codigo')) return false;
+    const isU = s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
+    if (!isU) return false;
+    const sample = raw.find((r: any) => r[c] && String(r[c]).trim() !== '');
+    if (sample && String(sample[c]).toUpperCase().includes('CENTRO DE SAUDE')) return false;
+    return true;
+  });
+
+  const cEq = cols.find(c => {
+    const s = normAccessStr(c);
+    return s.includes('nome da equipe') || s === 'equipe' || s === 'nome';
+  });
+
+  const uSet = new Set<string>();
+  const eqMap: Record<string, Set<string>> = {};
+
+  raw.forEach((r: any) => {
+    const u = cUnid ? String(r[cUnid] || '').replace(/\s+/g, ' ').trim().toUpperCase() : '';
+    const e = cEq ? String(r[cEq] || '').replace(/\s+/g, ' ').trim().toUpperCase() : '';
+    if (u && u !== 'SEM UNIDADE' && u !== 'GERAL' && !u.includes('CENTRO DE SAUDE')) {
+      uSet.add(u);
+      if (!eqMap[u]) eqMap[u] = new Set<string>();
+      if (e) eqMap[u].add(e);
+    }
+    if (e) {
+      if (!eqMap['__TODAS__']) eqMap['__TODAS__'] = new Set<string>();
+      eqMap['__TODAS__'].add(e);
+    }
+  });
+
+  const outMap: Record<string, string[]> = {};
+  Object.keys(eqMap).forEach(k => { outMap[k] = Array.from(eqMap[k]).sort(); });
+
+  return { unidadesList: Array.from(uSet).sort(), equipesByUnidade: outMap, cUnid, cEq };
+}
+
+function getSystemRoles(usersList: any[]) {
+  const cfg = (usersList || []).find((u: any) => u.id === '_roles_config_');
+  return cfg && Array.isArray(cfg.roles) && cfg.roles.length > 0 ? cfg.roles : DEFAULT_ROLES;
+}
+
+function getFilteredFilesForUser(files: any[], currentUser: any, usersList: any[]) {
+  if (!currentUser || !files || files.length === 0) return files;
+  const roles = getSystemRoles(usersList);
+  const userRec = (usersList || []).find((u: any) =>
+    (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+    u.id === currentUser.uid ||
+    u.id === currentUser.id
+  ) || currentUser;
+
+  const roleObj = roles.find((r: any) => r.name === userRec?.role);
+  const scope = userRec?.scope || roleObj?.scope || 'geral';
+
+  if (userRec?.role === 'Administrador' || scope === 'geral') return files;
+
+  const allowedUnidades: string[] = Array.from(new Set([
+    ...(Array.isArray(userRec?.unidades) ? userRec.unidades : userRec?.unidade ? [userRec.unidade] : []),
+    ...(Array.isArray(roleObj?.unidades) ? roleObj.unidades : [])
+  ])).filter(Boolean);
+
+  const allowedEquipes: string[] = Array.from(new Set([
+    ...(Array.isArray(userRec?.equipes) ? userRec.equipes : userRec?.equipe ? [userRec.equipe] : []),
+    ...(Array.isArray(roleObj?.equipes) ? roleObj.equipes : [])
+  ])).filter(Boolean);
+
+  if (allowedUnidades.length === 0 && allowedEquipes.length === 0) return files;
+
+  const { cUnid, cEq } = extractUnidadesAndEquipes(files);
+
+  return files.map((f: any) => ({
+    ...f,
+    data: (f.data || []).filter((r: any) => {
+      const u = cUnid ? String(r[cUnid] || '').replace(/\s+/g, ' ').trim().toUpperCase() : '';
+      const e = cEq ? String(r[cEq] || '').replace(/\s+/g, ' ').trim().toUpperCase() : '';
+      const matchU = allowedUnidades.length === 0 || allowedUnidades.includes(u);
+      const matchE = allowedEquipes.length === 0 || allowedEquipes.includes(e);
+      return matchU && matchE;
+    })
+  })).filter((f: any) => f.data.length > 0);
+}
+
+function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
+  const roles = useMemo(() => getSystemRoles(usersList), [usersList]);
+  const visibleUsers = useMemo(() => (usersList || []).filter((u: any) => u.id !== '_roles_config_' && !u.deleted), [usersList]);
+  const { unidadesList, equipesByUnidade } = useMemo(() => extractUnidadesAndEquipes(files), [files]);
+
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [nome, setNome] = useState('');
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [selectedRole, setSelectedRole] = useState(roles[0]?.name || 'Administrador');
+  const [checkedUnidades, setCheckedUnidades] = useState<string[]>([]);
+  const [checkedEquipes, setCheckedEquipes] = useState<string[]>([]);
+
+  const currentRoleObj = roles.find((r: any) => r.name === selectedRole) || { scope: 'geral', unidades: [], equipes: [] };
+
+  const availableEquipes = useMemo(() => {
+    if (checkedUnidades.length > 0) {
+      const set = new Set<string>();
+      checkedUnidades.forEach(u => (equipesByUnidade[u] || []).forEach(eq => set.add(eq)));
+      return Array.from(set).sort();
+    }
+    return equipesByUnidade['__TODAS__'] || [];
+  }, [checkedUnidades, equipesByUnidade]);
+
+  const toggleItem = (list: string[], setList: (v: string[]) => void, item: string) => {
+    if (list.includes(item)) setList(list.filter(i => i !== item));
+    else setList([...list, item]);
   };
+
+  const handleRoleChange = (roleName: string) => {
+    setSelectedRole(roleName);
+    const rObj = roles.find((r: any) => r.name === roleName);
+    setCheckedUnidades(Array.isArray(rObj?.unidades) ? rObj.unidades : []);
+    setCheckedEquipes(Array.isArray(rObj?.equipes) ? rObj.equipes : []);
+  };
+
+  const startEdit = (u: any) => {
+    setEditingUser(u);
+    setNome(u.name || '');
+    setEmail(u.email || '');
+    setPass('');
+    setSelectedRole(u.role || roles[0]?.name || 'Administrador');
+    setCheckedUnidades(Array.isArray(u.unidades) ? u.unidades : u.unidade ? [u.unidade] : []);
+    setCheckedEquipes(Array.isArray(u.equipes) ? u.equipes : u.equipe ? [u.equipe] : []);
+  };
+
+  const cancelEdit = () => {
+    setEditingUser(null);
+    setNome('');
+    setEmail('');
+    setPass('');
+    setSelectedRole(roles[0]?.name || 'Administrador');
+    setCheckedUnidades([]);
+    setCheckedEquipes([]);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const scope = currentRoleObj.scope || 'geral';
+    const finalUnidades = (scope === 'unidade' || scope === 'equipe') ? checkedUnidades : [];
+    const finalEquipes = scope === 'equipe' ? checkedEquipes : [];
+
+    if (scope === 'unidade' && finalUnidades.length === 0) {
+      alert('Marque pelo menos uma Unidade para este utilizador.');
+      return;
+    }
+    if (scope === 'equipe' && finalEquipes.length === 0) {
+      alert('Marque pelo menos uma Equipe para este utilizador.');
+      return;
+    }
+
+    const userPayload = {
+      name: nome,
+      role: selectedRole,
+      scope,
+      unidades: finalUnidades,
+      equipes: finalEquipes,
+      unidade: finalUnidades[0] || '',
+      equipe: finalEquipes[0] || ''
+    };
+
+    try {
+      if (editingUser) {
+        const updatedUser = { ...editingUser, ...userPayload };
+        await setDoc(doc(db, 'users', editingUser.id), updatedUser);
+        setUsersList(usersList.map((u: any) => u.id === editingUser.id ? updatedUser : u));
+        alert('Utilizador atualizado com sucesso!');
+        cancelEdit();
+      } else {
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+        const newUid = userCred.user.uid;
+        const newUser = { email, ...userPayload };
+        await setDoc(doc(db, 'users', newUid), newUser);
+        setUsersList([...usersList, { id: newUid, ...newUser }]);
+        alert('Utilizador cadastrado com sucesso!');
+        cancelEdit();
+      }
+    } catch (err: any) {
+      alert('Erro ao guardar: ' + err.message);
+    }
+  };
+
+  const handleDeleteUser = async (u: any) => {
+    if (!window.confirm(`Deseja remover o utilizador "${u.name}"?`)) return;
+    try {
+      const removed = { ...u, deleted: true };
+      await setDoc(doc(db, 'users', u.id), removed);
+      setUsersList(usersList.map((item: any) => item.id === u.id ? removed : item));
+    } catch (err: any) {
+      alert('Erro ao remover: ' + err.message);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="md:col-span-1 bg-white p-5 rounded-xl border border-slate-200 shadow-sm h-fit">
-        <h3 className="font-bold text-slate-800 mb-4 flex items-center"><UserPlus className="h-5 w-5 mr-2 text-blue-600"/> Novo Usuário</h3>
-        <form onSubmit={handleAdd} className="space-y-3">
-          <input name="nome" placeholder="Nome Completo" required className="w-full p-2 border rounded-lg outline-none text-sm"/>
-          <input name="email" type="email" placeholder="E-mail de Login" required className="w-full p-2 border rounded-lg outline-none text-sm"/>
-          <input name="pass" type="password" placeholder="Senha (Mín. 6)" required minLength={6} className="w-full p-2 border rounded-lg outline-none text-sm"/>
-          <select name="role" className="w-full p-2 border rounded-lg outline-none text-sm bg-white"><option>Administrador</option><option>Coordenador</option><option>Leitor</option></select>
-          <button type="submit" className={`w-full ${bgClass} text-white py-2 rounded-lg font-bold text-sm hover:opacity-90`}>Salvar na Nuvem</button>
+        <h3 className="font-bold text-slate-800 mb-4 flex items-center">
+          <UserPlus className="h-5 w-5 mr-2 text-blue-600" />
+          {editingUser ? 'Editar Usuário' : 'Novo Usuário'}
+        </h3>
+        <form onSubmit={handleSave} className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Nome Completo</label>
+            <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome Completo" required className="w-full p-2 border rounded-lg outline-none text-sm mt-1" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600">E-mail de Login</label>
+            <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="E-mail de Login" required disabled={Boolean(editingUser)} className={`w-full p-2 border rounded-lg outline-none text-sm mt-1 ${editingUser ? 'bg-slate-100 text-slate-500' : ''}`} />
+          </div>
+
+          {!editingUser && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Senha Inicial</label>
+              <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="Senha (Mín. 6)" required minLength={6} className="w-full p-2 border rounded-lg outline-none text-sm mt-1" />
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Perfil de Acesso</label>
+            <select value={selectedRole} onChange={e => handleRoleChange(e.target.value)} className="w-full p-2 border rounded-lg outline-none text-sm bg-white mt-1">
+              {roles.map((r: any) => (
+                <option key={r.name} value={r.name}>
+                  {r.name} ({r.scope === 'unidade' ? 'Por Unidade' : r.scope === 'equipe' ? 'Por Equipe' : 'Acesso Geral'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(currentRoleObj.scope === 'unidade' || currentRoleObj.scope === 'equipe') && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-600">
+                  Unidades Permitidas ({checkedUnidades.length})
+                </label>
+                <button type="button" onClick={() => setCheckedUnidades(checkedUnidades.length === unidadesList.length ? [] : [...unidadesList])} className="text-[11px] text-blue-600 hover:underline">
+                  {checkedUnidades.length === unidadesList.length ? 'Desmarcar todas' : 'Marcar todas'}
+                </button>
+              </div>
+              <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1.5 bg-slate-50">
+                {unidadesList.map(u => (
+                  <label key={u} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={checkedUnidades.includes(u)}
+                      onChange={() => toggleItem(checkedUnidades, setCheckedUnidades, u)}
+                      className="rounded text-blue-600"
+                    />
+                    <span className="truncate">{u}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {currentRoleObj.scope === 'equipe' && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-600">
+                  Equipes Permitidas ({checkedEquipes.length})
+                </label>
+                <button type="button" onClick={() => setCheckedEquipes(checkedEquipes.length === availableEquipes.length ? [] : [...availableEquipes])} className="text-[11px] text-blue-600 hover:underline">
+                  {checkedEquipes.length === availableEquipes.length ? 'Desmarcar todas' : 'Marcar todas'}
+                </button>
+              </div>
+              <div className="max-h-44 overflow-y-auto border rounded-lg p-2 space-y-1.5 bg-slate-50">
+                {availableEquipes.map(eq => (
+                  <label key={eq} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={checkedEquipes.includes(eq)}
+                      onChange={() => toggleItem(checkedEquipes, setCheckedEquipes, eq)}
+                      className="rounded text-blue-600"
+                    />
+                    <span className="truncate">{eq}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button type="submit" className={`flex-1 ${bgClass} text-white py-2 rounded-lg font-bold text-sm hover:opacity-90`}>
+              {editingUser ? 'Salvar Alterações' : 'Salvar na Nuvem'}
+            </button>
+            {editingUser && (
+              <button type="button" onClick={cancelEdit} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-300">
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       </div>
-      <div className="md:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+
+      <div className="md:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
         <h3 className="font-bold text-slate-800 mb-4">Usuários do Sistema</h3>
-        <table className="w-full text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-2">Nome</th><th className="p-2">E-mail</th><th className="p-2">Perfil</th></tr></thead>
-        <tbody>
-          {usersList.map((u:any) => <tr key={u.id} className="border-b"><td className="p-2 font-medium">{u.name}</td><td className="p-2 text-slate-500">{u.email}</td><td className="p-2"><span className={`px-2 py-1 rounded text-xs ${u.role==='Administrador'?'bg-red-100 text-red-700':u.role==='Coordenador'?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}`}>{u.role}</span></td></tr>)}
-        </tbody></table>
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-100">
+            <tr>
+              <th className="p-2">Nome</th>
+              <th className="p-2">E-mail</th>
+              <th className="p-2">Perfil</th>
+              <th className="p-2">Acesso Liberado (Unidades / Equipes)</th>
+              <th className="p-2 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleUsers.map((u: any) => {
+              const uList = Array.isArray(u.unidades) ? u.unidades : u.unidade ? [u.unidade] : [];
+              const eList = Array.isArray(u.equipes) ? u.equipes : u.equipe ? [u.equipe] : [];
+              return (
+                <tr key={u.id} className="border-b hover:bg-slate-50">
+                  <td className="p-2 font-medium">{u.name}</td>
+                  <td className="p-2 text-slate-500">{u.email}</td>
+                  <td className="p-2">
+                    <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="p-2 text-xs text-slate-600 max-w-xs">
+                    {eList.length > 0 ? (
+                      <div><strong>Equipes:</strong> {eList.join(', ')}</div>
+                    ) : uList.length > 0 ? (
+                      <div><strong>Unidades:</strong> {uList.join(', ')}</div>
+                    ) : (
+                      <span className="text-slate-400">Conforme Perfil / Geral</span>
+                    )}
+                  </td>
+                  <td className="p-2 text-right space-x-2 whitespace-nowrap">
+                    <button onClick={() => startEdit(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold">
+                      Editar
+                    </button>
+                    <button onClick={() => handleDeleteUser(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-red-100 text-red-600 rounded text-xs font-semibold">
+                      Excluir
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-function ModuleAccess({ bgClass }: any) {
+function ModuleAccess({ usersList, setUsersList, files = [], bgClass }: any) {
+  const roles = useMemo(() => getSystemRoles(usersList), [usersList]);
+  const { unidadesList, equipesByUnidade } = useMemo(() => extractUnidadesAndEquipes(files), [files]);
+
+  const [roleName, setRoleName] = useState('');
+  const [roleScope, setRoleScope] = useState('unidade');
+  const [roleDesc, setRoleDesc] = useState('');
+  const [checkedUnidades, setCheckedUnidades] = useState<string[]>([]);
+  const [checkedEquipes, setCheckedEquipes] = useState<string[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  const availableEquipes = useMemo(() => {
+    if (checkedUnidades.length > 0) {
+      const set = new Set<string>();
+      checkedUnidades.forEach(u => (equipesByUnidade[u] || []).forEach(eq => set.add(eq)));
+      return Array.from(set).sort();
+    }
+    return equipesByUnidade['__TODAS__'] || [];
+  }, [checkedUnidades, equipesByUnidade]);
+
+  const toggleItem = (list: string[], setList: (v: string[]) => void, item: string) => {
+    if (list.includes(item)) setList(list.filter(i => i !== item));
+    else setList([...list, item]);
+  };
+
+  const saveRolesToCloud = async (newRoles: any[]) => {
+    try {
+      const cfgDoc = { id: '_roles_config_', isConfig: true, roles: newRoles };
+      await setDoc(doc(db, 'users', '_roles_config_'), cfgDoc);
+      const exists = (usersList || []).some((u: any) => u.id === '_roles_config_');
+      if (exists) {
+        setUsersList(usersList.map((u: any) => u.id === '_roles_config_' ? cfgDoc : u));
+      } else {
+        setUsersList([...(usersList || []), cfgDoc]);
+      }
+    } catch (err: any) {
+      alert('Erro ao guardar perfis: ' + err.message);
+    }
+  };
+
+  const handleSaveRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roleName.trim()) return;
+
+    const newRoleObj = {
+      name: roleName.trim(),
+      scope: roleScope,
+      desc: roleDesc.trim() || (roleScope === 'unidade' ? 'Acesso restrito às Unidades marcadas.' : roleScope === 'equipe' ? 'Acesso restrito às Equipes marcadas.' : 'Acesso geral ao painel.'),
+      unidades: (roleScope === 'unidade' || roleScope === 'equipe') ? checkedUnidades : [],
+      equipes: roleScope === 'equipe' ? checkedEquipes : []
+    };
+
+    let updated = [...roles];
+    if (editingIndex !== null) {
+      updated[editingIndex] = newRoleObj;
+    } else {
+      if (updated.some(r => r.name.toLowerCase() === newRoleObj.name.toLowerCase())) {
+        alert('Já existe um perfil com este nome!');
+        return;
+      }
+      updated.push(newRoleObj);
+    }
+
+    await saveRolesToCloud(updated);
+    setRoleName('');
+    setRoleScope('unidade');
+    setRoleDesc('');
+    setCheckedUnidades([]);
+    setCheckedEquipes([]);
+    setEditingIndex(null);
+  };
+
+  const handleEditRole = (r: any, idx: number) => {
+    setEditingIndex(idx);
+    setRoleName(r.name);
+    setRoleScope(r.scope || 'geral');
+    setRoleDesc(r.desc || '');
+    setCheckedUnidades(Array.isArray(r.unidades) ? r.unidades : []);
+    setCheckedEquipes(Array.isArray(r.equipes) ? r.equipes : []);
+  };
+
+  const handleDeleteRole = async (idx: number) => {
+    if (!window.confirm(`Deseja excluir o perfil "${roles[idx].name}"?`)) return;
+    const updated = roles.filter((_: any, i: number) => i !== idx);
+    await saveRolesToCloud(updated);
+  };
+
   return (
-    <div className="max-w-4xl bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-      <h2 className="text-lg font-bold flex items-center mb-6"><Shield className="mr-2 h-5 w-5 text-blue-600"/> Tabela de Permissões</h2>
-      <div className="space-y-4">
-        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-red-700">Administrador</h3><p className="text-slate-600 text-sm">Acesso total. Gestão de usuários, layout, importação e Dashboard.</p></div>
-        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-amber-700">Coordenador</h3><p className="text-slate-600 text-sm">Apenas importação de relatórios para a nuvem e visualização do Dashboard.</p></div>
-        <div className="p-4 border rounded-lg bg-slate-50"><h3 className="font-bold text-emerald-700">Leitor</h3><p className="text-slate-600 text-sm">Visualização exclusiva do Dashboard. Não pode editar nem enviar arquivos.</p></div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="md:col-span-1 bg-white p-5 rounded-xl border border-slate-200 shadow-sm h-fit">
+        <h3 className="font-bold text-slate-800 mb-4 flex items-center">
+          <Shield className="h-5 w-5 mr-2 text-blue-600" />
+          {editingIndex !== null ? 'Editar Perfil' : 'Criar Novo Perfil'}
+        </h3>
+        <form onSubmit={handleSaveRole} className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Nome do Perfil</label>
+            <input
+              value={roleName}
+              onChange={e => setRoleName(e.target.value)}
+              placeholder="Ex: Gerente UBS Centro, Equipe 1..."
+              required
+              className="w-full p-2 border rounded-lg outline-none text-sm mt-1"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Tipo de Restrição</label>
+            <select
+              value={roleScope}
+              onChange={e => { setRoleScope(e.target.value); setCheckedUnidades([]); setCheckedEquipes([]); }}
+              className="w-full p-2 border rounded-lg outline-none text-sm bg-white mt-1"
+            >
+              <option value="unidade">Restringir por Unidade(s)</option>
+              <option value="equipe">Restringir por Equipe(s)</option>
+              <option value="geral">Acesso Geral (Município Inteiro)</option>
+            </select>
+          </div>
+
+          {(roleScope === 'unidade' || roleScope === 'equipe') && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-600">
+                  Escolher Unidades ({checkedUnidades.length})
+                </label>
+                <button type="button" onClick={() => setCheckedUnidades(checkedUnidades.length === unidadesList.length ? [] : [...unidadesList])} className="text-[11px] text-blue-600 hover:underline">
+                  {checkedUnidades.length === unidadesList.length ? 'Limpar' : 'Todas'}
+                </button>
+              </div>
+              <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1.5 bg-slate-50">
+                {unidadesList.map(u => (
+                  <label key={u} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={checkedUnidades.includes(u)}
+                      onChange={() => toggleItem(checkedUnidades, setCheckedUnidades, u)}
+                      className="rounded text-blue-600"
+                    />
+                    <span className="truncate">{u}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {roleScope === 'equipe' && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-semibold text-slate-600">
+                  Escolher Equipes ({checkedEquipes.length})
+                </label>
+                <button type="button" onClick={() => setCheckedEquipes(checkedEquipes.length === availableEquipes.length ? [] : [...availableEquipes])} className="text-[11px] text-blue-600 hover:underline">
+                  {checkedEquipes.length === availableEquipes.length ? 'Limpar' : 'Todas'}
+                </button>
+              </div>
+              <div className="max-h-44 overflow-y-auto border rounded-lg p-2 space-y-1.5 bg-slate-50">
+                {availableEquipes.map(eq => (
+                  <label key={eq} className="flex items-center space-x-2 text-xs text-slate-700 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={checkedEquipes.includes(eq)}
+                      onChange={() => toggleItem(checkedEquipes, setCheckedEquipes, eq)}
+                      className="rounded text-blue-600"
+                    />
+                    <span className="truncate">{eq}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Descrição (Opcional)</label>
+            <textarea
+              value={roleDesc}
+              onChange={e => setRoleDesc(e.target.value)}
+              placeholder="Descrição do perfil..."
+              rows={2}
+              className="w-full p-2 border rounded-lg outline-none text-sm mt-1"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button type="submit" className={`flex-1 ${bgClass} text-white py-2 rounded-lg font-bold text-sm hover:opacity-90`}>
+              {editingIndex !== null ? 'Salvar Alterações' : 'Criar Perfil'}
+            </button>
+            {editingIndex !== null && (
+              <button
+                type="button"
+                onClick={() => { setEditingIndex(null); setRoleName(''); setRoleDesc(''); setCheckedUnidades([]); setCheckedEquipes([]); }}
+                className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 className="text-lg font-bold flex items-center mb-4">
+          <Shield className="mr-2 h-5 w-5 text-blue-600" /> Perfis Cadastrados
+        </h2>
+        <div className="space-y-3">
+          {roles.map((r: any, idx: number) => (
+            <div key={idx} className="p-4 border rounded-lg bg-slate-50 flex justify-between items-start gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-slate-800">{r.name}</h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                    r.scope === 'unidade' ? 'bg-blue-100 text-blue-700' :
+                    r.scope === 'equipe' ? 'bg-emerald-100 text-emerald-700' :
+                    'bg-amber-100 text-amber-700'
+                  }`}>
+                    {r.scope === 'unidade' ? 'Por Unidade' : r.scope === 'equipe' ? 'Por Equipe' : 'Acesso Geral'}
+                  </span>
+                </div>
+                <p className="text-slate-600 text-sm mt-1">{r.desc}</p>
+                {Array.isArray(r.unidades) && r.unidades.length > 0 && (
+                  <p className="text-xs text-blue-700 mt-1.5"><strong>Unidades marcadas:</strong> {r.unidades.join(', ')}</p>
+                )}
+                {Array.isArray(r.equipes) && r.equipes.length > 0 && (
+                  <p className="text-xs text-emerald-700 mt-1"><strong>Equipes marcadas:</strong> {r.equipes.join(', ')}</p>
+                )}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => handleEditRole(r, idx)} className="px-2.5 py-1 bg-white border hover:bg-blue-50 text-blue-600 rounded text-xs font-semibold">
+                  Editar
+                </button>
+                <button onClick={() => handleDeleteRole(idx)} className="px-2.5 py-1 bg-white border hover:bg-red-50 text-red-600 rounded text-xs font-semibold">
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -649,7 +1202,7 @@ function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
 // ==========================================
 // MÓDULO DE DASHBOARD PRINCIPAL
 // ==========================================
-function ModuleDashboard({ files, bgClass }: any) {
+function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
