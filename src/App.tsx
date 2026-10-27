@@ -83,9 +83,9 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
 
 // --- UTILITÁRIOS MATEMÁTICOS & PADRONIZAÇÃO ---
 const monthOrder: Record<string, number> = { 'Janeiro':1, 'Fevereiro':2, 'Março':3, 'Abril':4, 'Maio':5, 'Junho':6, 'Julho':7, 'Agosto':8, 'Setembro':9, 'Outubro':10, 'Novembro':11, 'Dezembro':12 };
-const S_COLORS: Record<string, string> = { 'Ótimo': '#3B82F6', 'Bom': '#10B981', 'Satisfatório': '#F59E0B', 'Regular': '#EF4444' };
-const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Satisfatório': 2, 'Bom': 3, 'Ótimo': 4 };
-const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Satisfatório', 3: 'Bom', 4: 'Ótimo' };
+const S_COLORS: Record<string, string> = { 'Ótimo': '#3B82F6', 'Bom': '#10B981', 'Suficiente': '#F59E0B', 'Regular': '#EF4444' };
+const S_WEIGHTS: Record<string, number> = { 'Regular': 1, 'Suficiente': 2, 'Bom': 3, 'Ótimo': 4 };
+const W_STATUS: Record<number, string> = { 1: 'Regular', 2: 'Suficiente', 3: 'Bom', 4: 'Ótimo' };
 
 const normalizeStrForFind = (s: any) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
@@ -127,36 +127,42 @@ const normStat = (v: any): string | null => {
   if (!s) return null; 
   if (s.includes('ótimo') || s.includes('otimo')) return 'Ótimo'; 
   if (['bom', 'boa'].includes(s) || s.startsWith('bom ')) return 'Bom'; 
-  if (s === 'satisfatório' || s.includes('satisfat') || s === 'suficiente' || (s.includes('suficiente') && !s.includes('insuficiente'))) return 'Satisfatório'; 
+  if (s === 'Suficiente' || s.includes('satisfat') || s === 'suficiente' || (s.includes('suficiente') && !s.includes('insuficiente'))) return 'Suficiente'; 
   if (['regular', 'ruim', 'crítico', 'critico', 'insuficiente'].includes(s) || s.includes('regular')) return 'Regular'; 
   return null; 
 };
 
-const calcStatus = (v: number | null, ind: string): string | null => {
-  if (v === null || isNaN(v)) return null;
-  const i = String(ind || '').toLowerCase();
+const calcStatus = (val: number, indName: string = '') => {
+  const norm = String(indName || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 
-  // 1. Vínculo e Acompanhamento Territorial
-  if (i.includes('vinculo') || i.includes('vínculo') || i.includes('territorial')) {
-    if (v > 85) return 'Ótimo';
-    if (v >= 65) return 'Bom'; 
-    if (v >= 45) return 'Satisfatório';
-    return 'Regular'; 
+  // 1. Regra para Vínculo e Acompanhamento Territorial:
+  // > 8,5: Ótimo | 7 a 8,5: Bom | 5,0 a 6,9: Suficiente | < 5,0: Regular
+  if (norm.includes('vinculo') || norm.includes('acompanhamento')) {
+    // Se a planilha vier na escala de 0 a 100 (ex: 85 em vez de 8.5), converte para a base 10
+    const nota = val > 10 ? val / 10 : val;
+
+    if (nota > 8.5) return 'Ótimo';
+    if (nota >= 7.0) return 'Bom';
+    if (nota >= 5.0) return 'Suficiente';
+    return 'Regular';
   }
 
-  // 2. C1 - MAIS ACESSO
-  if (i.includes('c1') || i.includes('acesso')) {
-    if (v > 50 && v <= 70) return 'Ótimo';
-    if (v > 30 && v <= 50) return 'Bom';
-    if (v > 10 && v <= 30) return 'Satisfatório'; 
-    return 'Regular'; 
+  // 2. Regra para C1 (Mais Acesso):
+  if (norm.includes('c1') || norm.includes('mais acesso')) {
+    if (val > 50 && val <= 70) return 'Ótimo';
+    if (val > 30 && val <= 50) return 'Bom';
+    if (val > 10 && val <= 30) return 'Suficiente';
+    return 'Regular';
   }
 
-  // 3. Regra Padrão (C2, C3, C4, C5, C6 e C7)
-  if (v > 75) return 'Ótimo';
-  if (v > 50) return 'Bom';
-  if (v > 25) return 'Satisfatório'; 
-  return 'Regular'; 
+  // 3. Regra Geral para C2 ao C7 (Demais Indicadores):
+  if (val > 75) return 'Ótimo';
+  if (val > 50) return 'Bom';
+  if (val > 25) return 'Suficiente';
+  return 'Regular';
 };
 
 const extMes = (f: string) => { const u = String(f || '').toUpperCase().trim(); for (const m of Object.keys(monthOrder)) if (u.startsWith(m.toUpperCase().substring(0,3))) return m; return String(f || '').split('-')[0].replace(/[0-9]/g, '').trim() || String(f || ''); };
@@ -1562,7 +1568,7 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
     return sortableData;
   }, [tableMode, consolidatedTeams, filteredData, sortConfig]);
 
-  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Satisfatório': 0, 'Regular': 0 };
+  const statusCounts = { 'Ótimo': 0, 'Bom': 0, 'Suficiente': 0, 'Regular': 0 };
   consolidatedTeams.forEach(t => { if (t.status && statusCounts[t.status as keyof typeof statusCounts] !== undefined) statusCounts[t.status as keyof typeof statusCounts]++; });
 
   const variablesChartData = variableColumns.map(col => {
@@ -1624,7 +1630,7 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
   const statusPieData = [
     { name: 'Ótimo', total: statusCounts['Ótimo'], color: '#3B82F6' },
     { name: 'Bom', total: statusCounts['Bom'], color: '#10B981' },
-    { name: 'Satisfatório', total: statusCounts['Satisfatório'], color: '#F59E0B' },
+    { name: 'Suficiente', total: statusCounts['Suficiente'], color: '#F59E0B' },
     { name: 'Regular', total: statusCounts['Regular'], color: '#EF4444' }
   ].filter(d => d.total > 0);
 
@@ -1707,9 +1713,9 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
           <div className="bg-emerald-100 p-2.5 rounded-full shrink-0"><CheckCircle className="h-5 w-5 text-emerald-600" /></div>
           <div><p className="text-xs text-emerald-700 font-semibold uppercase">Bom</p><p className="text-xl font-bold text-emerald-600">{statusCounts['Bom']}</p></div>
         </div>
-        <div onClick={() => statusCounts['Satisfatório'] > 0 && setActiveModalStatus('Satisfatório')} className={`bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3 ${statusCounts['Satisfatório'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all' : 'opacity-60'}`}>
+        <div onClick={() => statusCounts['Suficiente'] > 0 && setActiveModalStatus('Suficiente')} className={`bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex items-center space-x-3 ${statusCounts['Suficiente'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-amber-400 transition-all' : 'opacity-60'}`}>
           <div className="bg-amber-100 p-2.5 rounded-full shrink-0"><AlertTriangle className="h-5 w-5 text-amber-600" /></div>
-          <div><p className="text-xs text-amber-700 font-semibold uppercase">Satisfatório</p><p className="text-xl font-bold text-amber-600">{statusCounts['Satisfatório']}</p></div>
+          <div><p className="text-xs text-amber-700 font-semibold uppercase">Suficiente</p><p className="text-xl font-bold text-amber-600">{statusCounts['Suficiente']}</p></div>
         </div>
         <div onClick={() => statusCounts['Regular'] > 0 && setActiveModalStatus('Regular')} className={`bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center space-x-3 col-span-2 lg:col-span-1 ${statusCounts['Regular'] > 0 ? 'cursor-pointer hover:shadow-md hover:border-red-400 transition-all' : 'opacity-60'}`}>
           <div className="bg-red-100 p-2.5 rounded-full shrink-0"><AlertOctagon className="h-5 w-5 text-red-600" /></div>
@@ -1861,11 +1867,11 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
       {activeModalStatus && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
-            <div className={`p-4 flex justify-between items-center text-white ${activeModalStatus === 'Ótimo' ? 'bg-blue-600' : activeModalStatus === 'Bom' ? 'bg-emerald-600' : activeModalStatus === 'Satisfatório' ? 'bg-amber-500' : 'bg-red-600'}`}>
+            <div className={`p-4 flex justify-between items-center text-white ${activeModalStatus === 'Ótimo' ? 'bg-blue-600' : activeModalStatus === 'Bom' ? 'bg-emerald-600' : activeModalStatus === 'Suficiente' ? 'bg-amber-500' : 'bg-red-600'}`}>
               <div className="flex items-center space-x-2">
                 {activeModalStatus === 'Ótimo' && <Award className="h-5 w-5" />}
                 {activeModalStatus === 'Bom' && <CheckCircle className="h-5 w-5" />}
-                {activeModalStatus === 'Satisfatório' && <AlertTriangle className="h-5 w-5" />}
+                {activeModalStatus === 'Suficiente' && <AlertTriangle className="h-5 w-5" />}
                 {activeModalStatus === 'Regular' && <AlertOctagon className="h-5 w-5" />}
                 <h3 className="font-bold text-lg">Equipes em Status {activeModalStatus} ({statusCounts[activeModalStatus as keyof typeof statusCounts]})</h3>
               </div>
@@ -1890,7 +1896,7 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
                       <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold text-white shadow-sm ${
                         activeModalStatus === 'Ótimo' ? 'bg-blue-500' : 
                         activeModalStatus === 'Bom' ? 'bg-emerald-500' : 
-                        activeModalStatus === 'Satisfatório' ? 'bg-amber-500' : 
+                        activeModalStatus === 'Suficiente' ? 'bg-amber-500' : 
                         'bg-red-500'
                       }`}>
                         {t.consolidatedRow[activeVariable] ?? '-'}
@@ -2053,7 +2059,7 @@ function ModuleRanking({ files, bgClass }: any) {
     const indScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
 
     optI.forEach(ind => {
-      indScores.set(ind, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Satisfatório':0, 'Regular':0} });
+      indScores.set(ind, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
     });
 
     filteredData.forEach(row => {
@@ -2065,7 +2071,7 @@ function ModuleRanking({ files, bgClass }: any) {
         const ubs = row._ubsLabel;
 
         if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL') {
-            if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Satisfatório':0, 'Regular':0} });
+            if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
             ubsScores.get(ubs)!.sum += w;
             ubsScores.get(ubs)!.count++;
             ubsScores.get(ubs)!.statusCounts[st]++;
@@ -2161,7 +2167,7 @@ function ModuleRanking({ files, bgClass }: any) {
                      <div className="flex space-x-1.5">
                        {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
                        {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
-                       {ubs['Satisfatório'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Satisfatório']} Sat.</span>}
+                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Sat.</span>}
                        {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
                      </div>
                    </div>
@@ -2191,7 +2197,7 @@ function ModuleRanking({ files, bgClass }: any) {
                      <div className="flex space-x-1.5">
                        {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
                        {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
-                       {ubs['Satisfatório'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Satisfatório']} Sat.</span>}
+                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Sat.</span>}
                        {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
                      </div>
                    </div>
@@ -2225,8 +2231,8 @@ function ModuleRanking({ files, bgClass }: any) {
                 <th onClick={() => requestSortInd('Bom')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
                   <div className="flex items-center text-emerald-700">Bom {sortConfigInd?.key === 'Bom' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
                 </th>
-                <th onClick={() => requestSortInd('Satisfatório')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
-                  <div className="flex items-center text-amber-700">Satisfatório {sortConfigInd?.key === 'Satisfatório' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
+                <th onClick={() => requestSortInd('Suficiente')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
+                  <div className="flex items-center text-amber-700">Suficiente {sortConfigInd?.key === 'Suficiente' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
                 </th>
                 <th onClick={() => requestSortInd('Regular')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
                   <div className="flex items-center text-red-700">Regular {sortConfigInd?.key === 'Regular' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
@@ -2239,7 +2245,7 @@ function ModuleRanking({ files, bgClass }: any) {
                   <td className="px-5 py-3.5 font-semibold text-slate-800">{ind.name}</td>
                   <td className="px-5 py-3.5 font-bold text-blue-600 bg-blue-50/30">{ind['Ótimo']}</td>
                   <td className="px-5 py-3.5 font-bold text-emerald-600 bg-emerald-50/30">{ind['Bom']}</td>
-                  <td className="px-5 py-3.5 font-bold text-amber-600 bg-amber-50/30">{ind['Satisfatório']}</td>
+                  <td className="px-5 py-3.5 font-bold text-amber-600 bg-amber-50/30">{ind['Suficiente']}</td>
                   <td className="px-5 py-3.5 font-bold text-red-600 bg-red-50/30">{ind['Regular']}</td>
                 </tr>
               ))}
