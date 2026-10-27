@@ -1948,9 +1948,23 @@ function ModuleRanking({ files, bgClass }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
-  const colUnidade = useMemo(() => columns.find(c => {
-    const s = normalizeStrForFind(c); return s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
-  }) || null, [columns]);
+  // Ignora colunas de "Tipo de Estabelecimento" ou "CNES" e verifica se o conteúdo não é "CENTRO DE SAUDE/UNIDADE BASICA"
+  const colUnidade = useMemo(() => {
+    const candidates = columns.filter(c => {
+      const s = normalizeStrForFind(c);
+      if (s.includes('tipo') || s.includes('cnes') || s.includes('codigo')) return false;
+      return s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs') || s.includes('fantasia');
+    });
+
+    const validCol = candidates.find(c => {
+      const sample = rawAllData.find(r => r[c] && String(r[c]).trim() !== '');
+      if (!sample) return false;
+      const val = String(sample[c]).toUpperCase();
+      return !val.includes('CENTRO DE SAUDE') && !val.includes('UNIDADE BASICA');
+    });
+
+    return validCol || candidates[0] || null;
+  }, [columns, rawAllData]);
 
   const colIne = useMemo(() => columns.find(c => {
     const s = normalizeStrForFind(c); return s === 'ine' || s.includes('codigo ine');
@@ -1976,7 +1990,25 @@ function ModuleRanking({ files, bgClass }: any) {
       let n = colEquipe ? String(r[colEquipe] || '').replace(/\s+/g, ' ').trim() : '';
       const ic = colIne ? normIne(r[colIne]) : '';
       let lbl = n ? n.toUpperCase() : (ic ? `EQUIPE INE ${ic}` : `EQUIPE ${idx + 1}`);
-      const ubs = colUnidade ? String(r[colUnidade] || 'Sem Unidade').replace(/\s+/g, ' ').trim().toUpperCase() : 'GERAL';
+      
+      // Busca na linha o nome real da UBS caso alguma planilha tenha cabeçalho diferente
+      let ubs = 'GERAL';
+      if (colUnidade && r[colUnidade]) {
+        const val = String(r[colUnidade]).replace(/\s+/g, ' ').trim().toUpperCase();
+        if (!val.includes('CENTRO DE SAUDE') && !val.includes('UNIDADE BASICA')) {
+          ubs = val;
+        }
+      }
+      if (ubs === 'GERAL') {
+        const altKey = Object.keys(r).find(k => {
+          const s = normalizeStrForFind(k);
+          if (s.includes('tipo') || s.includes('cnes') || s.includes('codigo')) return false;
+          if (!(s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs') || s.includes('fantasia'))) return false;
+          const v = String(r[k] || '').toUpperCase();
+          return v !== '' && !v.includes('CENTRO DE SAUDE') && !v.includes('UNIDADE BASICA');
+        });
+        if (altKey) ubs = String(r[altKey]).replace(/\s+/g, ' ').trim().toUpperCase();
+      }
       
       let tipoStr = 'Outros';
       const typeVal = colTipoEquipe ? String(r[colTipoEquipe] || '').toUpperCase() : '';
@@ -2041,14 +2073,16 @@ function ModuleRanking({ files, bgClass }: any) {
         const paramIndex = indCols.findIndex(c => normalizeStrForFind(c).includes('parametro'));
         const validCols = paramIndex !== -1 ? indCols.slice(paramIndex) : indCols;
         
-        const indL = ind.toLowerCase();
+        const indL = normalizeStrForFind(ind);
         const findCol = (keywords: string[]) => validCols.find(c => {
            const norm = normalizeStrForFind(c);
            return keywords.some(k => norm.includes(k));
         });
         
         let found;
-        if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
+        if (indL.includes('vinculo') || indL.includes('acompanhamento')) {
+           found = findCol(['nota final', 'nota', 'pontuacao final', 'resultado']);
+        } else if (indL.includes('c2') || indL.includes('c4') || indL.includes('c5')) {
            found = findCol(['razao entre', 'razao']);
         } else if (indL.includes('c7')) {
            found = findCol(['somatorio', 'boa pratica']);
@@ -2067,13 +2101,20 @@ function ModuleRanking({ files, bgClass }: any) {
   };
 
   const getStatusForRow = (row: any, ind: string) => {
+    const indL = normalizeStrForFind(ind);
+    const vCol = getActiveVarForIndicator(ind);
+
+    // Para Vínculo e Acompanhamento, prioriza o cálculo pela Nota Final (8.5 / 7.0 / 5.0)
+    if ((indL.includes('vinculo') || indL.includes('acompanhamento')) && vCol && row[String(vCol)] !== undefined) {
+      return calcStatus(parseNum(row[String(vCol)]), ind);
+    }
+
     const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
     const statusCol = rowKeys.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
     if (statusCol) {
       const st = normStat(row[statusCol]);
-      if (st) return st;
+      if (st) return st === 'Satisfatório' ? 'Suficiente' : st;
     }
-    const vCol = getActiveVarForIndicator(ind);
     if (vCol) return calcStatus(parseNum(row[String(vCol)]), ind);
     return null;
   };
@@ -2094,7 +2135,7 @@ function ModuleRanking({ files, bgClass }: any) {
         const w = S_WEIGHTS[st];
         const ubs = row._ubsLabel;
 
-        if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL') {
+        if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL' && !ubs.includes('CENTRO DE SAUDE')) {
             if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
             ubsScores.get(ubs)!.sum += w;
             ubsScores.get(ubs)!.count++;
@@ -2191,7 +2232,7 @@ function ModuleRanking({ files, bgClass }: any) {
                      <div className="flex space-x-1.5">
                        {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
                        {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
-                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Sat.</span>}
+                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Suf.</span>}
                        {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
                      </div>
                    </div>
@@ -2221,7 +2262,7 @@ function ModuleRanking({ files, bgClass }: any) {
                      <div className="flex space-x-1.5">
                        {ubs['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{ubs['Ótimo']} Ótimo</span>}
                        {ubs['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{ubs['Bom']} Bom</span>}
-                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Sat.</span>}
+                       {ubs['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{ubs['Suficiente']} Suf.</span>}
                        {ubs['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{ubs['Regular']} Reg.</span>}
                      </div>
                    </div>
