@@ -654,8 +654,14 @@ function ModuleDashboard({ files, bgClass }: any) {
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
   const colUnidade = useMemo(() => columns.find(c => {
-    const s = normalizeStrForFind(c); return s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
-  }) || null, [columns]);
+    const s = normalizeStrForFind(c);
+    if (s.includes('tipo') || s.includes('cnes') || s.includes('codigo')) return false;
+    const isUnit = s.includes('estabelecimento') || s.includes('unidade') || s.includes('ubs');
+    if (!isUnit) return false;
+    const sample = rawAllData.find((r: any) => r[c] && String(r[c]).trim() !== '');
+    if (sample && String(sample[c]).toUpperCase().includes('CENTRO DE SAUDE')) return false;
+    return true;
+  }) || null, [columns, rawAllData]);
 
   const colIne = useMemo(() => columns.find(c => {
     const s = normalizeStrForFind(c); return s === 'ine' || s.includes('codigo ine');
@@ -790,8 +796,8 @@ function ModuleDashboard({ files, bgClass }: any) {
   const optU = useMemo(() => Array.from(new Set(baseFilterData
     .filter(d => (!selectedTipoEquipe || d._tipoEquipe === selectedTipoEquipe) && (!selectedEquipe || d._teamLabel === selectedEquipe))
     .map(d => String(d._ubsLabel || ''))
-  )).filter(u => Boolean(u) && u !== 'SEM UNIDADE' && u !== 'GERAL').sort(), [baseFilterData, selectedTipoEquipe, selectedEquipe]);
-  
+  )).filter(u => Boolean(u) && u !== 'SEM UNIDADE' && u !== 'GERAL' && !u.toUpperCase().includes('CENTRO DE SAUDE')).sort(), [baseFilterData, selectedTipoEquipe, selectedEquipe]);
+
   const optT = useMemo(() => Array.from(new Set(baseFilterData
     .filter(d => (!selectedUnidade || d._ubsLabel === selectedUnidade) && (!selectedEquipe || d._teamLabel === selectedEquipe))
     .map(d => String(d._tipoEquipe || 'Outros'))
