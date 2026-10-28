@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft, Trophy } from 'lucide-react';
-import { BarChart, Bar, LineChart, ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
+import { BarChart, Bar, LineChart, AreaChart, Area, ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -2547,7 +2547,7 @@ function ModuleRanking({ files, bgClass }: any) {
         )}
       </section>
 
-{/* NOVA SEÇÃO: EVOLUÇÃO MENSAL (Múltiplos Gráficos) */}
+{/* NOVA SEÇÃO: EVOLUÇÃO MENSAL (Múltiplos Gráficos - Estilo Montanha/Área) */}
 <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
         <div onClick={() => setShowEvolution(!showEvolution)} className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/60 transition-colors relative z-10">
           <div className="flex items-center">
@@ -2555,8 +2555,7 @@ function ModuleRanking({ files, bgClass }: any) {
             <div>
               <h3 className="font-bold text-slate-800">Evolução Mensal por Indicador</h3>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5 uppercase tracking-wider">
-                <span className="inline-block w-2.5 h-2.5 bg-blue-400 rounded-sm mr-1 align-middle"></span> Barras: Nota do Indicador &nbsp;|&nbsp; 
-                <span className="inline-block w-4 border-t-2 border-dashed border-slate-400 mx-1 align-middle"></span> Linha: Média Geral do Município
+                <span className="inline-block w-2.5 h-2.5 bg-blue-400 rounded-sm mr-1 align-middle"></span> Área: Nota Média do Indicador
               </p>
             </div>
           </div>
@@ -2575,19 +2574,38 @@ function ModuleRanking({ files, bgClass }: any) {
                   </h4>
                 </div>
                 
-                {/* Lado Direito: Gráfico Misto (Barras + Linha) */}
+                {/* Lado Direito: Gráfico de Montanha (AreaChart) */}
                 <div className="w-full lg:w-2/3 xl:w-3/4" style={{ height: 160 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={evolutionData} margin={{ top: 20, right: 20, left: -25, bottom: 0 }}>
+                    <AreaChart data={evolutionData} margin={{ top: 20, right: 20, left: -25, bottom: 0 }}>
+                      
+                      {/* Efeito de degradê (Fade) para a montanha */}
+                      <defs>
+                        <linearGradient id={`color-${i}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.6}/>
+                          <stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
                       <YAxis domain={[0, 4]} stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} />
+                      
+                      {/* Tooltip atualizada para mostrar apenas a Nota Média do Indicador */}
                       <Tooltip 
-                        formatter={(val: number, name: string) => [val ? val.toFixed(2) : '-', name === 'Média Geral' ? 'Média do Município' : 'Nota do Indicador']} 
+                        formatter={(val: number) => [val ? val.toFixed(2) : '-', 'Nota Média do Indicador']} 
                       />
                       
-                      {/* Barras do Indicador Específico com os valores em cima */}
-                      <Bar dataKey={ind} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} maxBarSize={45}>
+                      <Area 
+                        type="monotone" 
+                        dataKey={ind} 
+                        stroke={CHART_COLORS[i % CHART_COLORS.length]} 
+                        strokeWidth={3}
+                        fillOpacity={1} 
+                        fill={`url(#color-${i})`} 
+                        activeDot={{ r: 6 }}
+                      >
+                        {/* Números no topo da montanha */}
                         <LabelList 
                           dataKey={ind} 
                           position="top" 
@@ -2596,19 +2614,8 @@ function ModuleRanking({ files, bgClass }: any) {
                           fill="#475569" 
                           formatter={(v: number) => v ? v.toFixed(2) : ''} 
                         />
-                      </Bar>
-                      
-                      {/* Linha da Média Geral para comparação */}
-                      <Line 
-                        type="monotone" 
-                        dataKey="Média Geral" 
-                        stroke="#94A3B8" 
-                        strokeWidth={2} 
-                        strokeDasharray="4 4" 
-                        dot={false} 
-                        activeDot={{ r: 4 }} 
-                      />
-                    </ComposedChart>
+                      </Area>
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
 
