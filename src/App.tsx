@@ -2574,12 +2574,12 @@ function ModuleRanking({ files, bgClass }: any) {
                   </h4>
                 </div>
                 
-                {/* Lado Direito: Gráfico de Montanha (AreaChart) */}
-                <div className="w-full lg:w-2/3 xl:w-3/4" style={{ height: 160 }}>
+{/* Lado Direito: Gráfico de Montanha (AreaChart) */}
+<div className="w-full lg:w-2/3 xl:w-3/4" style={{ height: 160 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={evolutionData} margin={{ top: 20, right: 20, left: -25, bottom: 0 }}>
+                    {/* Aumentei a margem do topo para 25 para os números não cortarem */}
+                    <AreaChart data={evolutionData} margin={{ top: 25, right: 20, left: -25, bottom: 0 }}>
                       
-                      {/* Efeito de degradê (Fade) para a montanha */}
                       <defs>
                         <linearGradient id={`color-${i}`} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.6}/>
@@ -2589,26 +2589,36 @@ function ModuleRanking({ files, bgClass }: any) {
                       
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
-                      <YAxis domain={[0, 4]} stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} />
                       
-                      {/* Tooltip atualizada para mostrar apenas a Nota Média do Indicador */}
+                      {/* ZOOM AUTOMÁTICO (auto, auto) PARA EXAGERAR A MONTANHA */}
+                      <YAxis 
+                        domain={['auto', 'auto']} 
+                        stroke="#64748b" 
+                        fontSize={10} 
+                        tickLine={false} 
+                        axisLine={false} 
+                        tickFormatter={(v) => v.toFixed(1)} 
+                      />
+                      
                       <Tooltip 
                         formatter={(val: number) => [val ? val.toFixed(2) : '-', 'Nota Média do Indicador']} 
                       />
                       
+                      {/* type="natural" cria curvas muito mais orgânicas e arredondadas */}
                       <Area 
-                        type="monotone" 
+                        type="linear" 
                         dataKey={ind} 
                         stroke={CHART_COLORS[i % CHART_COLORS.length]} 
                         strokeWidth={3}
                         fillOpacity={1} 
-                        fill={`url(#color-${i})`} 
+                        fill={`url(#color-${i})`}
+                        dot={{ r: 4, strokeWidth: 2, fill: 'white' }}
                         activeDot={{ r: 6 }}
                       >
-                        {/* Números no topo da montanha */}
                         <LabelList 
                           dataKey={ind} 
                           position="top" 
+                          offset={12}
                           fontSize={10} 
                           fontWeight="bold" 
                           fill="#475569" 
