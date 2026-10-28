@@ -2047,12 +2047,13 @@ function ModuleRanking({ files, bgClass }: any) {
   const [selectedMes, setSelectedMes] = useState('');
   const [sortConfigInd, setSortConfigInd] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
-  // Estados para os blocos minimizáveis
+  // Estados de Minimizar
   const [showTopUbs, setShowTopUbs] = useState(true);
   const [showBottomUbs, setShowBottomUbs] = useState(true);
   const [showTopEq, setShowTopEq] = useState(true);
   const [showBottomEq, setShowBottomEq] = useState(true);
   const [showInd, setShowInd] = useState(true);
+  const [showEvolution, setShowEvolution] = useState(true); // NOVO: Estado da Evolução
 
   useEffect(() => {
     if (!selectedMes && optM.length > 0) {
@@ -2132,14 +2133,55 @@ function ModuleRanking({ files, bgClass }: any) {
     return null;
   };
 
-  const { ubsRanking, indRanking, eqRanking } = useMemo(() => {
-    const RANKING_WEIGHTS: Record<string, number> = {
-      'Ótimo': 4,
-      'Bom': 3,
-      'Suficiente': 2,
-      'Regular': 1 
-    };
+  const RANKING_WEIGHTS: Record<string, number> = useMemo(() => ({
+    'Ótimo': 4,
+    'Bom': 3,
+    'Suficiente': 2,
+    'Regular': 1 
+  }), []);
 
+  // NOVO: Cálculo da Evolução Mensal (Ignorando filtro de Mês)
+  const evolutionData = useMemo(() => {
+    return optM.map(m => {
+      const monthRows = allData.filter(d => String(d._mesOrigem) === m);
+      const result: any = { name: m };
+
+      // Calcula a média ponderada de CADA indicador neste mês
+      optI.forEach(ind => {
+        let sum = 0;
+        let count = 0;
+        monthRows.forEach(row => {
+          if (row._mappedIndicator === ind) {
+            const st = getStatusForRow(row, ind);
+            if (st && RANKING_WEIGHTS[st] !== undefined) {
+              sum += RANKING_WEIGHTS[st];
+              count++;
+            }
+          }
+        });
+        result[ind] = count > 0 ? Number((sum / count).toFixed(2)) : null;
+      });
+
+      // Calcula a Média Geral do Município para o mês
+      let totalSum = 0;
+      let totalCount = 0;
+      monthRows.forEach(row => {
+        const ind = row._mappedIndicator;
+        const st = getStatusForRow(row, ind);
+        if (st && RANKING_WEIGHTS[st] !== undefined) {
+          totalSum += RANKING_WEIGHTS[st];
+          totalCount++;
+        }
+      });
+      result['Média Geral'] = totalCount > 0 ? Number((totalSum / totalCount).toFixed(2)) : null;
+
+      return result;
+    });
+  }, [allData, optM, optI, RANKING_WEIGHTS]);
+
+  const CHART_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+
+  const { ubsRanking, indRanking, eqRanking } = useMemo(() => {
     const ubsScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
     const eqScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
     const indScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
@@ -2191,7 +2233,7 @@ function ModuleRanking({ files, bgClass }: any) {
       indRanking: sortScores(indScores),
       eqRanking: sortScores(eqScores) 
     };
-  }, [filteredData, optI]);
+  }, [filteredData, optI, RANKING_WEIGHTS]);
 
   const top10UBS = ubsRanking.slice(0, 10);
   const bottom10UBS = [...ubsRanking].reverse().slice(0, 10);
@@ -2435,7 +2477,6 @@ function ModuleRanking({ files, bgClass }: any) {
            </div>
            
            <div className="flex items-center space-x-4">
-             {/* O stopPropagation evita que o click no 'i' feche a tabela sem querer */}
              <div className="relative group flex items-center" onClick={(e) => e.stopPropagation()}>
                <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
                  i
@@ -2443,7 +2484,7 @@ function ModuleRanking({ files, bgClass }: any) {
                <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                  <p className="font-bold text-white mb-2">Média do Indicador</p>
                  <p className="text-slate-300 text-xs mb-3 leading-relaxed">
-                   A média ponderada revela quais indicadores têm a melhor qualidade de entrega no município. Cada avaliação de equipe tem um peso:
+                   A média ponderada revela quais indicadores têm a melhor qualidade de entrega no município. Cada avaliação tem um peso:
                  </p>
                  <ul className="text-xs space-y-2 mb-3 font-medium">
                    <li className="flex items-center"><span className="w-2.5 h-2.5 bg-blue-400 rounded-full mr-2 shadow-sm"></span> Ótimo = 4 pontos</li>
@@ -2505,6 +2546,40 @@ function ModuleRanking({ files, bgClass }: any) {
         </div>
         )}
       </section>
+
+      {/* NOVA SEÇÃO: EVOLUÇÃO MENSAL (Lê todos os meses da base de dados) */}
+      <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+        <div onClick={() => setShowEvolution(!showEvolution)} className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/60 transition-colors relative z-10">
+          <div className="flex items-center">
+            <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
+            <h3 className="font-bold text-slate-800">Evolução Mensal (Média Ponderada)</h3>
+          </div>
+          {showEvolution ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
+        </div>
+        
+        {showEvolution && (
+          <div className="p-4" style={{ height: 380 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={evolutionData} margin={{ top: 10, right: 20, left: -20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis domain={[0, 4]} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} />
+                <Tooltip formatter={(value: any) => [Number(value).toFixed(2), "Média"]} />
+                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                
+                {/* Linhas Individuais dos Indicadores */}
+                {optI.map((ind, i) => (
+                  <Line key={ind} type="monotone" dataKey={ind} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={true} />
+                ))}
+                
+                {/* Linha Destacada da Média Geral do Município */}
+                <Line type="monotone" dataKey="Média Geral" stroke="#1E293B" strokeWidth={4} strokeDasharray="5 5" dot={{ r: 4 }} activeDot={{ r: 6 }} connectNulls={true} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </section>
+
     </div>
   );
 }
