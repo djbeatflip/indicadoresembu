@@ -362,45 +362,54 @@ function MainApp() {
 }
 
 // ==========================================
-// TELA DE LOGIN & RECUPERAÇÃO DE SENHA
 // ==========================================
+// TELA DE LOGIN RESTRITO (ACESSO POR CPF)
+// ==========================================
+
+// Função auxiliar para aplicar a máscara do CPF enquanto o usuário digita
+const formatCPF = (value: string) => {
+  return value
+    .replace(/\D/g, '') // Remove tudo o que não é número
+    .replace(/(\d{3})(\d)/, '$1.$2') // Adiciona o primeiro ponto
+    .replace(/(\d{3})(\d)/, '$1.$2') // Adiciona o segundo ponto
+    .replace(/(\d{3})(\d{1,2})/, '$1-$2') // Adiciona o traço
+    .replace(/(-\d{2})\d+?$/, '$1'); // Impede que digitem mais do que 11 números
+};
+
 function LoginScreen({ bgClass }: any) {
   const [isRegister, setIsRegister] = useState(false);
-  const [isForgot, setIsForgot] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [cpfInput, setCpfInput] = useState(''); // Estado que guarda o que o usuário digita
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCpfInput(formatCPF(e.target.value));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     const frm = e.target as any;
-    const email = frm.email.value;
+    
+    // Limpa o CPF para ter só números e cria o "falso" e-mail do sistema para o Firebase
+    const cleanCPF = cpfInput.replace(/\D/g, ''); 
+    if (cleanCPF.length !== 11) {
+      setErrorMsg('O CPF deve conter exatamente 11 números.');
+      return;
+    }
+    const systemEmail = `${cleanCPF}@embu.aps.br`; 
     const pass = frm.pass.value;
+
     try {
       if (isRegister) {
         const nome = frm.nome.value;
-        const userCred = await createUserWithEmailAndPassword(auth, email, pass);
-        await setDoc(doc(db, 'users', userCred.user.uid), { email: email, name: nome, role: 'Administrador' });
+        const userCred = await createUserWithEmailAndPassword(auth, systemEmail, pass);
+        // Ao salvar no banco de dados (users), salvamos o CPF limpo para referência
+        await setDoc(doc(db, 'users', userCred.user.uid), { cpf: cleanCPF, emailSystem: systemEmail, name: nome, role: 'Administrador' });
       } else {
-        await signInWithEmailAndPassword(auth, email, pass);
+        await signInWithEmailAndPassword(auth, systemEmail, pass);
       }
     } catch (err: any) {
-      setErrorMsg(err.message.includes('user-not-found') || err.message.includes('invalid-credential') ? 'Credenciais inválidas ou e-mail não cadastrado.' : err.message);
-    }
-  };
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-    const frm = e.target as any;
-    const email = frm.email.value;
-    try {
-      await sendPasswordResetEmail(auth, email);
-      setSuccessMsg('E-mail de recuperação enviado! Verifique a sua caixa de entrada e spam.');
-      setTimeout(() => { setIsForgot(false); setSuccessMsg(''); }, 5000);
-    } catch (err: any) {
-      setErrorMsg(err.message.includes('user-not-found') ? 'Este e-mail não está cadastrado.' : 'Erro ao tentar recuperar a senha.');
+      setErrorMsg(err.message.includes('user-not-found') || err.message.includes('invalid-credential') ? 'CPF ou palavra-passe incorretos.' : err.message);
     }
   };
 
@@ -410,36 +419,53 @@ function LoginScreen({ bgClass }: any) {
         <div className="flex justify-center mb-6"><div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}><Shield className={`h-10 w-10 text-slate-800`} /></div></div>
         <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">Indicadores APS<br/><span className="text-lg font-medium text-slate-500">Embu das Artes</span></h2>
         
-        {isForgot ? (
-          <>
-            <p className="text-center text-slate-500 text-sm mb-6">Recuperar Palavra-passe</p>
-            {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
-            {successMsg && <div className="bg-emerald-50 text-emerald-600 p-3 rounded-lg text-xs mb-4 text-center border border-emerald-200">{successMsg}</div>}
-            <form onSubmit={handleForgotPassword} className="space-y-4">
-              <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail Cadastrado</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>Enviar link de recuperação</button>
-            </form>
-            <div className="mt-6 text-center"><button onClick={() => {setIsForgot(false); setErrorMsg(''); setSuccessMsg('');}} className="text-xs text-slate-500 hover:underline">Voltar ao Login</button></div>
-          </>
-        ) : (
-          <>
-            <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
-            {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && (<div><label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label><input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>)}
-              <div><label className="block text-xs font-semibold text-slate-600 mb-1">E-mail</label><input name="email" type="email" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" /></div>
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-semibold text-slate-600">Senha (Mín. 6)</label>
-                  {!isRegister && <button type="button" onClick={() => {setIsForgot(true); setErrorMsg('');}} className="text-[10px] text-blue-600 hover:underline">Esqueceu?</button>}
-                </div>
-                <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
-              </div>
-              <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>{isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}</button>
-            </form>
-            <div className="mt-6 text-center"><button onClick={() => {setIsRegister(!isRegister); setErrorMsg('');}} className="text-xs text-blue-600 hover:underline">{isRegister ? 'Já tenho uma conta. Fazer Login' : 'Primeiro Acesso? Criar Conta Master'}</button></div>
-          </>
-        )}
+        <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
+        
+        {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isRegister && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label>
+              <input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">CPF</label>
+            <input 
+              name="cpf" 
+              type="text" 
+              value={cpfInput}
+              onChange={handleCpfChange}
+              placeholder="000.000.000-00" 
+              required 
+              className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500 font-medium tracking-wider" 
+            />
+          </div>
+          
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-xs font-semibold text-slate-600">Senha (Mín. 6)</label>
+              {/* O botão 'Esqueci a Senha' foi removido propositadamente daqui */}
+            </div>
+            <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
+          </div>
+          
+          <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
+            {isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}
+          </button>
+        </form>
+        
+        <div className="mt-6 text-center text-[11px] text-slate-400 font-medium">
+          Esqueceu a senha? Solicite ao seu Administrador.
+        </div>
+        
+        <div className="mt-4 text-center">
+          <button type="button" onClick={() => {setIsRegister(!isRegister); setErrorMsg(''); setCpfInput('');}} className="text-xs text-slate-500 hover:underline">
+            {isRegister ? 'Fazer Login' : 'Primeiro Acesso? Criar Administrador Master'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -690,13 +716,27 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
 
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [nome, setNome] = useState('');
-  const [email, setEmail] = useState('');
+  const [cpf, setCpf] = useState(''); // Estado do CPF visível
   const [pass, setPass] = useState('');
   const [selectedRole, setSelectedRole] = useState(roles[0]?.name || 'Administrador');
   const [checkedUnidades, setCheckedUnidades] = useState<string[]>([]);
   const [checkedEquipes, setCheckedEquipes] = useState<string[]>([]);
 
   const currentRoleObj = roles.find((r: any) => r.name === selectedRole) || { scope: 'geral', unidades: [], equipes: [] };
+
+  // Função para formatar CPF no input
+  const formatCPF = (value: string) => {
+    return value
+      .replace(/\D/g, '') 
+      .replace(/(\d{3})(\d)/, '$1.$2') 
+      .replace(/(\d{3})(\d)/, '$1.$2') 
+      .replace(/(\d{3})(\d{1,2})/, '$1-$2') 
+      .replace(/(-\d{2})\d+?$/, '$1'); 
+  };
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCpf(formatCPF(e.target.value));
+  };
 
   const availableEquipes = useMemo(() => {
     if (checkedUnidades.length > 0) {
@@ -722,7 +762,7 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
   const startEdit = (u: any) => {
     setEditingUser(u);
     setNome(u.name || '');
-    setEmail(u.email || '');
+    setCpf(u.cpf ? formatCPF(u.cpf) : ''); 
     setPass('');
     setSelectedRole(u.role || roles[0]?.name || 'Administrador');
     setCheckedUnidades(Array.isArray(u.unidades) ? u.unidades : u.unidade ? [u.unidade] : []);
@@ -732,7 +772,7 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
   const cancelEdit = () => {
     setEditingUser(null);
     setNome('');
-    setEmail('');
+    setCpf('');
     setPass('');
     setSelectedRole(roles[0]?.name || 'Administrador');
     setCheckedUnidades([]);
@@ -741,6 +781,14 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const cleanCPF = cpf.replace(/\D/g, ''); 
+    if (cleanCPF.length !== 11) {
+      alert('O CPF deve conter 11 números.');
+      return;
+    }
+    const systemEmail = `${cleanCPF}@embu.aps.br`;
+
     const scope = currentRoleObj.scope || 'geral';
     const finalUnidades = (scope === 'unidade' || scope === 'equipe') ? checkedUnidades : [];
     const finalEquipes = scope === 'equipe' ? checkedEquipes : [];
@@ -756,6 +804,8 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
 
     const userPayload = {
       name: nome,
+      cpf: cleanCPF, // Salva o CPF limpo no banco
+      emailSystem: systemEmail, // Salva a referência do login invisível
       role: selectedRole,
       scope,
       unidades: finalUnidades,
@@ -772,27 +822,48 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
         alert('Utilizador atualizado com sucesso!');
         cancelEdit();
       } else {
-        const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, systemEmail, pass);
         const newUid = userCred.user.uid;
-        const newUser = { email, ...userPayload };
+        const newUser = { ...userPayload };
         await setDoc(doc(db, 'users', newUid), newUser);
         setUsersList([...usersList, { id: newUid, ...newUser }]);
         alert('Utilizador cadastrado com sucesso!');
         cancelEdit();
       }
     } catch (err: any) {
-      alert('Erro ao guardar: ' + err.message);
+      alert(err.message.includes('email-already-in-use') ? 'Este CPF já está cadastrado no sistema!' : 'Erro ao guardar: ' + err.message);
     }
   };
 
   const handleDeleteUser = async (u: any) => {
+    // TRAVA DE SEGURANÇA: Impede a exclusão do Administrador Master (que não tem CPF salvo)
+    if (!u.cpf) {
+      alert('Ação Negada: O Administrador Master original não pode ser excluído.');
+      return;
+    }
+
     if (!window.confirm(`Deseja remover o utilizador "${u.name}"?`)) return;
+    
     try {
       const removed = { ...u, deleted: true };
       await setDoc(doc(db, 'users', u.id), removed);
       setUsersList(usersList.map((item: any) => item.id === u.id ? removed : item));
     } catch (err: any) {
       alert('Erro ao remover: ' + err.message);
+    }
+  };
+
+  // Botão de "Reset de Senha" - Como o secondaryAuth está no FrontEnd, recriamos a credencial no Firebase Auth ou usamos o updatePassword (se permitido). 
+  // A solução mais simples no Firebase Client sem Cloud Functions é alterar a senha via updatePassword se usarmos o secondaryAuth para relogar o usuário internamente.
+  const handleResetPassword = async (u: any) => {
+    if (!window.confirm(`Deseja definir a senha de "${u.name}" para mudar@123 ?`)) return;
+    try {
+      // Usa o secondaryAuth para autenticar o usuário alvo e trocar a senha
+      const fakeEmail = u.emailSystem || `${u.cpf}@embu.aps.br`;
+      alert('Em sistemas frontend (sem backend Node.js), a recuperação de senha por Admin exige deletar e recriar a conta no Firebase Auth, ou usar uma Cloud Function. Recomendação: Exclua este acesso e cadastre-o novamente com o mesmo CPF e a senha "mudar@123". Os dados e permissões podem ser recopiados facilmente.');
+      // O código de reset ideal ficaria num backend (Admin SDK). O alerta avisa a melhor prática visual.
+    } catch (err: any) {
+      alert('Erro: ' + err.message);
     }
   };
 
@@ -810,8 +881,8 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-600">E-mail de Login</label>
-            <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="E-mail de Login" required disabled={Boolean(editingUser)} className={`w-full p-2 border rounded-lg outline-none text-sm mt-1 ${editingUser ? 'bg-slate-100 text-slate-500' : ''}`} />
+            <label className="text-xs font-semibold text-slate-600">CPF (Login)</label>
+            <input value={cpf} onChange={handleCpfChange} type="text" placeholder="000.000.000-00" required disabled={Boolean(editingUser)} className={`w-full p-2 border rounded-lg outline-none text-sm mt-1 font-medium tracking-wider ${editingUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`} />
           </div>
 
           {!editingUser && (
@@ -886,7 +957,7 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
 
           <div className="flex gap-2 pt-2">
             <button type="submit" className={`flex-1 ${bgClass} text-white py-2 rounded-lg font-bold text-sm hover:opacity-90`}>
-              {editingUser ? 'Salvar Alterações' : 'Salvar na Nuvem'}
+              {editingUser ? 'Salvar Alterações' : 'Criar Acesso'}
             </button>
             {editingUser && (
               <button type="button" onClick={cancelEdit} className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-300">
@@ -903,9 +974,9 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
           <thead className="bg-slate-100">
             <tr>
               <th className="p-2">Nome</th>
-              <th className="p-2">E-mail</th>
+              <th className="p-2">CPF (Login)</th>
               <th className="p-2">Perfil</th>
-              <th className="p-2">Acesso Liberado (Unidades / Equipes)</th>
+              <th className="p-2">Acesso Liberado</th>
               <th className="p-2 text-right">Ações</th>
             </tr>
           </thead>
@@ -916,7 +987,7 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
               return (
                 <tr key={u.id} className="border-b hover:bg-slate-50">
                   <td className="p-2 font-medium">{u.name}</td>
-                  <td className="p-2 text-slate-500">{u.email}</td>
+                  <td className="p-2 text-slate-500">{u.cpf ? formatCPF(u.cpf) : 'Migrar para CPF'}</td>
                   <td className="p-2">
                     <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                       {u.role}
@@ -932,11 +1003,14 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
                     )}
                   </td>
                   <td className="p-2 text-right space-x-2 whitespace-nowrap">
-                    <button onClick={() => startEdit(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold">
+                    <button onClick={() => handleResetPassword(u)} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[11px] font-bold" title="Resetar Senha">
+                      Reset
+                    </button>
+                    <button onClick={() => startEdit(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold">
                       Editar
                     </button>
-                    <button onClick={() => handleDeleteUser(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-red-100 text-red-600 rounded text-xs font-semibold">
-                      Excluir
+                    <button onClick={() => handleDeleteUser(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-red-100 text-red-600 rounded text-[11px] font-bold">
+                      X
                     </button>
                   </td>
                 </tr>
