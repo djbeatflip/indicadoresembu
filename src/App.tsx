@@ -2334,6 +2334,10 @@ function ModuleRanking({ files, bgClass }: any) {
                 <th onClick={() => requestSortInd('Regular')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
                   <div className="flex items-center text-red-700">Regular {sortConfigInd?.key === 'Regular' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
                 </th>
+                {/* NOVA COLUNA DE MÉDIA */}
+                <th onClick={() => requestSortInd('avg')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group border-l border-slate-200 bg-slate-200/50">
+                  <div className="flex items-center justify-end text-slate-800 font-bold">Média (Pontos) {sortConfigInd?.key === 'avg' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1 text-slate-800" /> : <ChevronDown className="h-4 w-4 ml-1 text-slate-800" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 text-slate-400" />}</div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -2344,9 +2348,14 @@ function ModuleRanking({ files, bgClass }: any) {
                   <td className="px-5 py-3.5 font-bold text-emerald-600 bg-emerald-50/30">{ind['Bom']}</td>
                   <td className="px-5 py-3.5 font-bold text-amber-600 bg-amber-50/30">{ind['Suficiente']}</td>
                   <td className="px-5 py-3.5 font-bold text-red-600 bg-red-50/30">{ind['Regular']}</td>
+                  {/* CÉLULA DA NOVA COLUNA */}
+                  <td className="px-5 py-3.5 font-black text-slate-700 bg-slate-100/50 border-l border-slate-200 text-right">
+                    {ind.avg.toFixed(2)}
+                  </td>
                 </tr>
               ))}
-              {sortedIndRanking.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400">Sem dados para este mês.</td></tr>}
+              {/* O colSpan foi ajustado para 6 devido à nova coluna */}
+              {sortedIndRanking.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400">Sem dados para este mês.</td></tr>}
             </tbody>
           </table>
         </div>
