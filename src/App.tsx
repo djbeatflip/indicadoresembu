@@ -2083,7 +2083,6 @@ function ModuleRanking({ files, bgClass }: any) {
         } else if (indL.includes('c7')) {
            found = findCol(['somatorio', 'boa pratica']);
         } else {
-           // Para Vínculo (e C1, C3, C6), pega exatamente a coluna PONTUAÇÃO igual ao Dashboard
            found = findCol(['pontuacao', 'pontua']);
         }
         if (!found) found = findCol(['nota', 'resultado', 'indicador', 'perc', 'total', 'proporcao']);
@@ -2100,7 +2099,6 @@ function ModuleRanking({ files, bgClass }: any) {
   const getStatusForRow = (row: any, ind: string) => {
     const indL = normalizeStrForFind(ind);
 
-    // 1. Se for Vínculo ou Acompanhamento, busca diretamente pela coluna numérica de nota/pontuação ou calcula pelo valor da linha
     if (indL.includes('vinculo') || indL.includes('acompanhamento')) {
       const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
       const notaCol = rowKeys.find(c => {
@@ -2112,7 +2110,6 @@ function ModuleRanking({ files, bgClass }: any) {
       }
     }
 
-    // 2. Para os demais indicadores ou se achar coluna de status textual
     const rowKeys = Object.keys(row || {}).filter(k => !String(k).startsWith('_'));
     const statusCol = rowKeys.find(c => ['classifica', 'conceito', 'qualidade', 'status', 'desempenho'].some(w => String(c).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(w)));
     if (statusCol) {
@@ -2128,8 +2125,17 @@ function ModuleRanking({ files, bgClass }: any) {
     return null;
   };
 
-  const { ubsRanking, indRanking } = useMemo(() => {
+  // AQUI CALCULA UBS, EQUIPES E INDICADORES SIMULTANEAMENTE
+  const { ubsRanking, indRanking, eqRanking } = useMemo(() => {
+    const RANKING_WEIGHTS: Record<string, number> = {
+      'Ótimo': 4,
+      'Bom': 3,
+      'Suficiente': 2,
+      'Regular': 1 
+    };
+
     const ubsScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
+    const eqScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
     const indScores = new Map<string, { sum: number, count: number, statusCounts: Record<string, number> }>();
 
     optI.forEach(ind => {
@@ -2140,15 +2146,26 @@ function ModuleRanking({ files, bgClass }: any) {
       const ind = row._mappedIndicator;
       const st = getStatusForRow(row, ind);
 
-      if (st && S_WEIGHTS[st]) {
-        const w = S_WEIGHTS[st];
+      if (st && RANKING_WEIGHTS[st] !== undefined) {
+        const w = RANKING_WEIGHTS[st];
         const ubs = row._ubsLabel;
+        const eq = row._teamLabel;
 
         if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL' && !ubs.includes('CENTRO DE SAUDE')) {
+            // Conta para a UBS
             if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
             ubsScores.get(ubs)!.sum += w;
             ubsScores.get(ubs)!.count++;
             ubsScores.get(ubs)!.statusCounts[st]++;
+
+            // Conta para a Equipa (guardando o nome da UBS na chave para separar equipas com o mesmo nome)
+            if (eq && !eq.toUpperCase().includes('SEM EQUIPE')) {
+                const eqKey = `${eq} | ${ubs}`; 
+                if (!eqScores.has(eqKey)) eqScores.set(eqKey, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
+                eqScores.get(eqKey)!.sum += w;
+                eqScores.get(eqKey)!.count++;
+                eqScores.get(eqKey)!.statusCounts[st]++;
+            }
         }
 
         if (indScores.has(ind)) {
@@ -2159,13 +2176,25 @@ function ModuleRanking({ files, bgClass }: any) {
       }
     });
 
-    const sortScores = (map: Map<string, any>) => Array.from(map.entries()).map(([name, data]) => ({ name, avg: data.count > 0 ? data.sum / data.count : 0, ...data.statusCounts })).sort((a, b) => b.avg - a.avg);
+    const sortScores = (map: Map<string, any>) => Array.from(map.entries()).map(([name, data]) => ({ 
+      name, 
+      avg: data.count > 0 ? data.sum / data.count : 0, 
+      ...data.statusCounts 
+    })).sort((a, b) => b.avg - a.avg);
 
-    return { ubsRanking: sortScores(ubsScores), indRanking: sortScores(indScores) };
+    return { 
+      ubsRanking: sortScores(ubsScores), 
+      indRanking: sortScores(indScores),
+      eqRanking: sortScores(eqScores) 
+    };
   }, [filteredData, optI]);
 
   const top10UBS = ubsRanking.slice(0, 10);
   const bottom10UBS = [...ubsRanking].reverse().slice(0, 10);
+  
+  // Extrai as Top 10 e Piores 10 Equipas
+  const top10Eq = eqRanking.slice(0, 10);
+  const bottom10Eq = [...eqRanking].reverse().slice(0, 10);
 
   const requestSortInd = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -2213,12 +2242,11 @@ function ModuleRanking({ files, bgClass }: any) {
 
   return (
     <div className="space-y-6">
-<section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 relative z-20">
+      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 relative z-20">
         <div className="flex items-center text-lg font-bold text-slate-800">
           <div className={`p-2 rounded-lg mr-3 ${bgClass} bg-opacity-10`}><Trophy className={`h-6 w-6 text-blue-600`} /></div>
           Ranking de Desempenho Global
           
-          {/* Botão de Informação (Tooltip Flutuante) */}
           <div className="relative group ml-3 flex items-center">
             <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
               i
@@ -2235,7 +2263,7 @@ function ModuleRanking({ files, bgClass }: any) {
                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-red-400 rounded-full mr-2 shadow-sm"></span> Regular = 1 ponto</li>
               </ul>
               <p className="text-slate-400 text-[11px] leading-tight pt-2.5 border-t border-slate-600">
-                Os pontos são somados e divididos pelo total de avaliações da UBS (Nota Máxima: 4.00).
+                Os pontos são somados e divididos pelo total de avaliações (Nota Máxima: 4.00).
               </p>
             </div>
           </div>
@@ -2248,6 +2276,7 @@ function ModuleRanking({ files, bgClass }: any) {
         </div>
       </section>
 
+      {/* RANKING DE UBS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="bg-blue-50 p-4 border-b border-blue-100 flex items-center">
@@ -2310,6 +2339,92 @@ function ModuleRanking({ files, bgClass }: any) {
         </div>
       </div>
 
+      {/* RANKING DE EQUIPAS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center justify-between">
+             <div className="flex items-center">
+               <Award className="h-5 w-5 text-indigo-600 mr-2" />
+               <h3 className="font-bold text-indigo-900">TOP 10 Melhores Equipes</h3>
+             </div>
+             <div className="relative group flex items-center">
+               <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">i</div>
+               <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 w-64 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                 <p className="text-slate-300 text-xs leading-relaxed">
+                   Calculado com a mesma regra de pesos (4, 3, 2, 1) focada apenas nos resultados individuais desta Equipe.
+                 </p>
+               </div>
+             </div>
+          </div>
+          <div className="divide-y divide-slate-100">
+             {top10Eq.map((eq, i) => (
+               <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
+                 <div className="flex items-center space-x-4">
+                   <span className={`font-black text-lg w-6 text-center ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-slate-300'}`}>#{i + 1}</span>
+                   <div>
+                     {/* Aqui separa o nome da Equipe e a UBS que guardámos com a barra "|" */}
+                     <p className="font-bold text-slate-800 text-sm leading-tight mb-0.5">{eq.name.split(' | ')[0]}</p>
+                     <p className="text-[10px] font-bold text-slate-400 mb-1.5 uppercase">{eq.name.split(' | ')[1]}</p>
+                     <div className="flex space-x-1.5">
+                       {eq['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{eq['Ótimo']} Ótimo</span>}
+                       {eq['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{eq['Bom']} Bom</span>}
+                       {eq['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{eq['Suficiente']} Suf.</span>}
+                       {eq['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{eq['Regular']} Reg.</span>}
+                     </div>
+                   </div>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-sm font-bold text-indigo-700">{eq.avg.toFixed(2)}</p>
+                   <p className="text-[9px] text-slate-400 uppercase font-semibold">Média</p>
+                 </div>
+               </div>
+             ))}
+             {top10Eq.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-orange-50 p-4 border-b border-orange-100 flex items-center justify-between">
+             <div className="flex items-center">
+               <AlertOctagon className="h-5 w-5 text-orange-600 mr-2" />
+               <h3 className="font-bold text-orange-900">TOP 10 Piores Equipes</h3>
+             </div>
+             <div className="relative group flex items-center">
+               <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-orange-500 hover:text-orange-500 hover:bg-orange-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">i</div>
+               <div className="absolute right-0 top-full mt-2 w-64 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                 <p className="text-slate-300 text-xs leading-relaxed">
+                   Equipes com a menor média ponderada. Devem receber acompanhamento focado nos indicadores classificados como Regulares.
+                 </p>
+               </div>
+             </div>
+          </div>
+          <div className="divide-y divide-slate-100">
+             {bottom10Eq.map((eq, i) => (
+               <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
+                 <div className="flex items-center space-x-4">
+                   <span className="font-black text-lg w-6 text-center text-orange-300">!</span>
+                   <div>
+                     <p className="font-bold text-slate-800 text-sm leading-tight mb-0.5">{eq.name.split(' | ')[0]}</p>
+                     <p className="text-[10px] font-bold text-slate-400 mb-1.5 uppercase">{eq.name.split(' | ')[1]}</p>
+                     <div className="flex space-x-1.5">
+                       {eq['Ótimo'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">{eq['Ótimo']} Ótimo</span>}
+                       {eq['Bom'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">{eq['Bom']} Bom</span>}
+                       {eq['Suficiente'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">{eq['Suficiente']} Suf.</span>}
+                       {eq['Regular'] > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">{eq['Regular']} Reg.</span>}
+                     </div>
+                   </div>
+                 </div>
+                 <div className="text-right">
+                   <p className="text-sm font-bold text-orange-600">{eq.avg.toFixed(2)}</p>
+                   <p className="text-[9px] text-slate-400 uppercase font-semibold">Média</p>
+                 </div>
+               </div>
+             ))}
+             {bottom10Eq.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
+          </div>
+        </div>
+      </div>
+
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center">
            <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
@@ -2334,7 +2449,6 @@ function ModuleRanking({ files, bgClass }: any) {
                 <th onClick={() => requestSortInd('Regular')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group">
                   <div className="flex items-center text-red-700">Regular {sortConfigInd?.key === 'Regular' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100" />}</div>
                 </th>
-                {/* NOVA COLUNA DE MÉDIA */}
                 <th onClick={() => requestSortInd('avg')} className="px-5 py-3.5 cursor-pointer hover:bg-slate-200 select-none group border-l border-slate-200 bg-slate-200/50">
                   <div className="flex items-center justify-end text-slate-800 font-bold">Média (Pontos) {sortConfigInd?.key === 'avg' ? (sortConfigInd.direction === 'asc' ? <ChevronUp className="h-4 w-4 ml-1 text-slate-800" /> : <ChevronDown className="h-4 w-4 ml-1 text-slate-800" />) : <ArrowUpDown className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 text-slate-400" />}</div>
                 </th>
@@ -2348,13 +2462,11 @@ function ModuleRanking({ files, bgClass }: any) {
                   <td className="px-5 py-3.5 font-bold text-emerald-600 bg-emerald-50/30">{ind['Bom']}</td>
                   <td className="px-5 py-3.5 font-bold text-amber-600 bg-amber-50/30">{ind['Suficiente']}</td>
                   <td className="px-5 py-3.5 font-bold text-red-600 bg-red-50/30">{ind['Regular']}</td>
-                  {/* CÉLULA DA NOVA COLUNA */}
                   <td className="px-5 py-3.5 font-black text-slate-700 bg-slate-100/50 border-l border-slate-200 text-right">
                     {ind.avg.toFixed(2)}
                   </td>
                 </tr>
               ))}
-              {/* O colSpan foi ajustado para 6 devido à nova coluna */}
               {sortedIndRanking.length === 0 && <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400">Sem dados para este mês.</td></tr>}
             </tbody>
           </table>
