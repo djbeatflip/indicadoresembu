@@ -2213,13 +2213,36 @@ function ModuleRanking({ files, bgClass }: any) {
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+<section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 relative z-20">
         <div className="flex items-center text-lg font-bold text-slate-800">
           <div className={`p-2 rounded-lg mr-3 ${bgClass} bg-opacity-10`}><Trophy className={`h-6 w-6 text-blue-600`} /></div>
           Ranking de Desempenho Global
+          
+          {/* Botão de Informação (Tooltip Flutuante) */}
+          <div className="relative group ml-3 flex items-center">
+            <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
+              i
+            </div>
+            <div className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 w-72 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+              <p className="font-bold text-white mb-2">Como é calculada a Média?</p>
+              <p className="text-slate-300 text-xs mb-3 leading-relaxed">
+                Utilizamos uma <strong>Média Ponderada</strong> para o ranking ser justo, independentemente do tamanho da UBS. Cada avaliação tem um peso:
+              </p>
+              <ul className="text-xs space-y-2 mb-3 font-medium">
+                <li className="flex items-center"><span className="w-2.5 h-2.5 bg-blue-400 rounded-full mr-2 shadow-sm"></span> Ótimo = 4 pontos</li>
+                <li className="flex items-center"><span className="w-2.5 h-2.5 bg-emerald-400 rounded-full mr-2 shadow-sm"></span> Bom = 3 pontos</li>
+                <li className="flex items-center"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full mr-2 shadow-sm"></span> Suficiente = 2 pontos</li>
+                <li className="flex items-center"><span className="w-2.5 h-2.5 bg-red-400 rounded-full mr-2 shadow-sm"></span> Regular = 1 ponto</li>
+              </ul>
+              <p className="text-slate-400 text-[11px] leading-tight pt-2.5 border-t border-slate-600">
+                Os pontos são somados e divididos pelo total de avaliações da UBS (Nota Máxima: 4.00).
+              </p>
+            </div>
+          </div>
         </div>
+
         <div className="w-full sm:w-64">
-          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white font-medium shadow-sm">
+          <select value={selectedMes} onChange={e => setSelectedMes(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white font-medium shadow-sm hover:border-blue-400 cursor-pointer transition-colors outline-none">
             {optM.map(o => <option key={o} value={o}>🏆 Mês: {o}</option>)}
           </select>
         </div>
