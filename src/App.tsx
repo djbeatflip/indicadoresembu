@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft, Trophy } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
+import { BarChart, Bar, LineChart, ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -2547,35 +2547,73 @@ function ModuleRanking({ files, bgClass }: any) {
         )}
       </section>
 
-      {/* NOVA SEÇÃO: EVOLUÇÃO MENSAL (Lê todos os meses da base de dados) */}
-      <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+{/* NOVA SEÇÃO: EVOLUÇÃO MENSAL (Múltiplos Gráficos) */}
+<section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
         <div onClick={() => setShowEvolution(!showEvolution)} className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/60 transition-colors relative z-10">
           <div className="flex items-center">
             <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
-            <h3 className="font-bold text-slate-800">Evolução Mensal (Média Ponderada)</h3>
+            <div>
+              <h3 className="font-bold text-slate-800">Evolução Mensal por Indicador</h3>
+              <p className="text-[10px] text-slate-500 font-medium mt-0.5 uppercase tracking-wider">
+                <span className="inline-block w-2.5 h-2.5 bg-blue-400 rounded-sm mr-1 align-middle"></span> Barras: Nota do Indicador &nbsp;|&nbsp; 
+                <span className="inline-block w-4 border-t-2 border-dashed border-slate-400 mx-1 align-middle"></span> Linha: Média Geral do Município
+              </p>
+            </div>
           </div>
           {showEvolution ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
         </div>
         
         {showEvolution && (
-          <div className="p-4" style={{ height: 380 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={evolutionData} margin={{ top: 10, right: 20, left: -20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis domain={[0, 4]} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} />
-                <Tooltip formatter={(value: any) => [Number(value).toFixed(2), "Média"]} />
-                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+          <div className="p-2 sm:p-4">
+            {optI.map((ind, i) => (
+              <div key={ind} className="flex flex-col lg:flex-row items-center gap-2 lg:gap-6 py-5 border-b border-slate-100 last:border-0">
                 
-                {/* Linhas Individuais dos Indicadores */}
-                {optI.map((ind, i) => (
-                  <Line key={ind} type="monotone" dataKey={ind} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={true} />
-                ))}
+                {/* Lado Esquerdo: Nome do Indicador */}
+                <div className="w-full lg:w-1/3 xl:w-1/4">
+                  <h4 className="font-bold text-slate-700 text-sm pr-4 border-l-4 border-transparent pl-2" style={{ borderLeftColor: CHART_COLORS[i % CHART_COLORS.length] }}>
+                    {ind}
+                  </h4>
+                </div>
                 
-                {/* Linha Destacada da Média Geral do Município */}
-                <Line type="monotone" dataKey="Média Geral" stroke="#1E293B" strokeWidth={4} strokeDasharray="5 5" dot={{ r: 4 }} activeDot={{ r: 6 }} connectNulls={true} />
-              </LineChart>
-            </ResponsiveContainer>
+                {/* Lado Direito: Gráfico Misto (Barras + Linha) */}
+                <div className="w-full lg:w-2/3 xl:w-3/4" style={{ height: 160 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={evolutionData} margin={{ top: 20, right: 20, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis domain={[0, 4]} stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => v.toFixed(1)} />
+                      <Tooltip 
+                        formatter={(val: number, name: string) => [val ? val.toFixed(2) : '-', name === 'Média Geral' ? 'Média do Município' : 'Nota do Indicador']} 
+                      />
+                      
+                      {/* Barras do Indicador Específico com os valores em cima */}
+                      <Bar dataKey={ind} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} maxBarSize={45}>
+                        <LabelList 
+                          dataKey={ind} 
+                          position="top" 
+                          fontSize={10} 
+                          fontWeight="bold" 
+                          fill="#475569" 
+                          formatter={(v: number) => v ? v.toFixed(2) : ''} 
+                        />
+                      </Bar>
+                      
+                      {/* Linha da Média Geral para comparação */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="Média Geral" 
+                        stroke="#94A3B8" 
+                        strokeWidth={2} 
+                        strokeDasharray="4 4" 
+                        dot={false} 
+                        activeDot={{ r: 4 }} 
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+
+              </div>
+            ))}
           </div>
         )}
       </section>
