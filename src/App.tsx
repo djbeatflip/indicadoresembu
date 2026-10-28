@@ -2047,6 +2047,13 @@ function ModuleRanking({ files, bgClass }: any) {
   const [selectedMes, setSelectedMes] = useState('');
   const [sortConfigInd, setSortConfigInd] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
 
+  // Estados para os blocos minimizáveis
+  const [showTopUbs, setShowTopUbs] = useState(true);
+  const [showBottomUbs, setShowBottomUbs] = useState(true);
+  const [showTopEq, setShowTopEq] = useState(true);
+  const [showBottomEq, setShowBottomEq] = useState(true);
+  const [showInd, setShowInd] = useState(true);
+
   useEffect(() => {
     if (!selectedMes && optM.length > 0) {
       setSelectedMes(optM[optM.length - 1]);
@@ -2125,7 +2132,6 @@ function ModuleRanking({ files, bgClass }: any) {
     return null;
   };
 
-  // AQUI CALCULA UBS, EQUIPES E INDICADORES SIMULTANEAMENTE
   const { ubsRanking, indRanking, eqRanking } = useMemo(() => {
     const RANKING_WEIGHTS: Record<string, number> = {
       'Ótimo': 4,
@@ -2152,13 +2158,11 @@ function ModuleRanking({ files, bgClass }: any) {
         const eq = row._teamLabel;
 
         if (ubs !== 'SEM UNIDADE' && ubs !== 'GERAL' && !ubs.includes('CENTRO DE SAUDE')) {
-            // Conta para a UBS
             if (!ubsScores.has(ubs)) ubsScores.set(ubs, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
             ubsScores.get(ubs)!.sum += w;
             ubsScores.get(ubs)!.count++;
             ubsScores.get(ubs)!.statusCounts[st]++;
 
-            // Conta para a Equipa (guardando o nome da UBS na chave para separar equipas com o mesmo nome)
             if (eq && !eq.toUpperCase().includes('SEM EQUIPE')) {
                 const eqKey = `${eq} | ${ubs}`; 
                 if (!eqScores.has(eqKey)) eqScores.set(eqKey, { sum: 0, count: 0, statusCounts: {'Ótimo':0, 'Bom':0, 'Suficiente':0, 'Regular':0} });
@@ -2192,7 +2196,6 @@ function ModuleRanking({ files, bgClass }: any) {
   const top10UBS = ubsRanking.slice(0, 10);
   const bottom10UBS = [...ubsRanking].reverse().slice(0, 10);
   
-  // Extrai as Top 10 e Piores 10 Equipas
   const top10Eq = eqRanking.slice(0, 10);
   const bottom10Eq = [...eqRanking].reverse().slice(0, 10);
 
@@ -2279,11 +2282,15 @@ function ModuleRanking({ files, bgClass }: any) {
       {/* RANKING DE UBS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-blue-50 p-4 border-b border-blue-100 flex items-center">
-             <Award className="h-5 w-5 text-blue-600 mr-2" />
-             <h3 className="font-bold text-blue-900">TOP 10 Melhores UBS</h3>
+          <div onClick={() => setShowTopUbs(!showTopUbs)} className="bg-blue-50 p-4 border-b border-blue-100 flex items-center justify-between cursor-pointer hover:bg-blue-100/60 transition-colors">
+             <div className="flex items-center">
+               <Award className="h-5 w-5 text-blue-600 mr-2" />
+               <h3 className="font-bold text-blue-900">TOP 10 Melhores UBS</h3>
+             </div>
+             {showTopUbs ? <ChevronUp className="h-5 w-5 text-blue-400" /> : <ChevronDown className="h-5 w-5 text-blue-400" />}
           </div>
-          <div className="divide-y divide-slate-100">
+          {showTopUbs && (
+          <div className="divide-y divide-slate-100 transition-all">
              {top10UBS.map((ubs, i) => (
                <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
                  <div className="flex items-center space-x-4">
@@ -2306,14 +2313,19 @@ function ModuleRanking({ files, bgClass }: any) {
              ))}
              {top10UBS.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
           </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-red-50 p-4 border-b border-red-100 flex items-center">
-             <AlertOctagon className="h-5 w-5 text-red-600 mr-2" />
-             <h3 className="font-bold text-red-900">TOP 10 Piores UBS</h3>
+          <div onClick={() => setShowBottomUbs(!showBottomUbs)} className="bg-red-50 p-4 border-b border-red-100 flex items-center justify-between cursor-pointer hover:bg-red-100/60 transition-colors">
+             <div className="flex items-center">
+               <AlertOctagon className="h-5 w-5 text-red-600 mr-2" />
+               <h3 className="font-bold text-red-900">TOP 10 Piores UBS</h3>
+             </div>
+             {showBottomUbs ? <ChevronUp className="h-5 w-5 text-red-400" /> : <ChevronDown className="h-5 w-5 text-red-400" />}
           </div>
-          <div className="divide-y divide-slate-100">
+          {showBottomUbs && (
+          <div className="divide-y divide-slate-100 transition-all">
              {bottom10UBS.map((ubs, i) => (
                <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
                  <div className="flex items-center space-x-4">
@@ -2336,17 +2348,22 @@ function ModuleRanking({ files, bgClass }: any) {
              ))}
              {bottom10UBS.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
           </div>
+          )}
         </div>
       </div>
 
-{/* RANKING DE EQUIPAS */}
-<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* RANKING DE EQUIPAS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center">
-             <Award className="h-5 w-5 text-indigo-600 mr-2" />
-             <h3 className="font-bold text-indigo-900">TOP 10 Melhores Equipes</h3>
+          <div onClick={() => setShowTopEq(!showTopEq)} className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center justify-between cursor-pointer hover:bg-indigo-100/60 transition-colors">
+             <div className="flex items-center">
+               <Award className="h-5 w-5 text-indigo-600 mr-2" />
+               <h3 className="font-bold text-indigo-900">TOP 10 Melhores Equipes</h3>
+             </div>
+             {showTopEq ? <ChevronUp className="h-5 w-5 text-indigo-400" /> : <ChevronDown className="h-5 w-5 text-indigo-400" />}
           </div>
-          <div className="divide-y divide-slate-100">
+          {showTopEq && (
+          <div className="divide-y divide-slate-100 transition-all">
              {top10Eq.map((eq, i) => (
                <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
                  <div className="flex items-center space-x-4">
@@ -2370,14 +2387,19 @@ function ModuleRanking({ files, bgClass }: any) {
              ))}
              {top10Eq.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
           </div>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-orange-50 p-4 border-b border-orange-100 flex items-center">
-             <AlertOctagon className="h-5 w-5 text-orange-600 mr-2" />
-             <h3 className="font-bold text-orange-900">TOP 10 Piores Equipes</h3>
+          <div onClick={() => setShowBottomEq(!showBottomEq)} className="bg-orange-50 p-4 border-b border-orange-100 flex items-center justify-between cursor-pointer hover:bg-orange-100/60 transition-colors">
+             <div className="flex items-center">
+               <AlertOctagon className="h-5 w-5 text-orange-600 mr-2" />
+               <h3 className="font-bold text-orange-900">TOP 10 Piores Equipes</h3>
+             </div>
+             {showBottomEq ? <ChevronUp className="h-5 w-5 text-orange-400" /> : <ChevronDown className="h-5 w-5 text-orange-400" />}
           </div>
-          <div className="divide-y divide-slate-100">
+          {showBottomEq && (
+          <div className="divide-y divide-slate-100 transition-all">
              {bottom10Eq.map((eq, i) => (
                <div key={i} className="flex items-center justify-between p-3.5 hover:bg-slate-50 transition-colors">
                  <div className="flex items-center space-x-4">
@@ -2401,40 +2423,46 @@ function ModuleRanking({ files, bgClass }: any) {
              ))}
              {bottom10Eq.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">Sem dados suficientes.</div>}
           </div>
+          )}
         </div>
       </div>
 
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* CABEÇALHO DOS INDICADORES COM O BOTÃO 'I' */}
-        <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between relative z-10">
+        <div onClick={() => setShowInd(!showInd)} className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-200/60 transition-colors relative z-10">
            <div className="flex items-center">
              <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
              <h3 className="font-bold text-slate-800">Ranking de Indicadores (Total de Avaliações)</h3>
            </div>
            
-           <div className="relative group flex items-center">
-             <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
-               i
+           <div className="flex items-center space-x-4">
+             {/* O stopPropagation evita que o click no 'i' feche a tabela sem querer */}
+             <div className="relative group flex items-center" onClick={(e) => e.stopPropagation()}>
+               <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
+                 i
+               </div>
+               <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                 <p className="font-bold text-white mb-2">Média do Indicador</p>
+                 <p className="text-slate-300 text-xs mb-3 leading-relaxed">
+                   A média ponderada revela quais indicadores têm a melhor qualidade de entrega no município. Cada avaliação de equipe tem um peso:
+                 </p>
+                 <ul className="text-xs space-y-2 mb-3 font-medium">
+                   <li className="flex items-center"><span className="w-2.5 h-2.5 bg-blue-400 rounded-full mr-2 shadow-sm"></span> Ótimo = 4 pontos</li>
+                   <li className="flex items-center"><span className="w-2.5 h-2.5 bg-emerald-400 rounded-full mr-2 shadow-sm"></span> Bom = 3 pontos</li>
+                   <li className="flex items-center"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full mr-2 shadow-sm"></span> Suficiente = 2 pontos</li>
+                   <li className="flex items-center"><span className="w-2.5 h-2.5 bg-red-400 rounded-full mr-2 shadow-sm"></span> Regular = 1 ponto</li>
+                 </ul>
+                 <p className="text-slate-400 text-[11px] leading-tight pt-2.5 border-t border-slate-600">
+                   Os pontos são somados e divididos pelo total de avaliações do indicador.
+                 </p>
+               </div>
              </div>
-             <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-               <p className="font-bold text-white mb-2">Média do Indicador</p>
-               <p className="text-slate-300 text-xs mb-3 leading-relaxed">
-                 A média ponderada revela quais indicadores têm a melhor qualidade de entrega no município. Cada avaliação de equipe tem um peso:
-               </p>
-               <ul className="text-xs space-y-2 mb-3 font-medium">
-                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-blue-400 rounded-full mr-2 shadow-sm"></span> Ótimo = 4 pontos</li>
-                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-emerald-400 rounded-full mr-2 shadow-sm"></span> Bom = 3 pontos</li>
-                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full mr-2 shadow-sm"></span> Suficiente = 2 pontos</li>
-                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-red-400 rounded-full mr-2 shadow-sm"></span> Regular = 1 ponto</li>
-               </ul>
-               <p className="text-slate-400 text-[11px] leading-tight pt-2.5 border-t border-slate-600">
-                 Os pontos são somados e divididos pelo total de avaliações do indicador.
-               </p>
-             </div>
+             
+             {showInd ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
            </div>
         </div>
         
-        <div className="overflow-x-auto">
+        {showInd && (
+        <div className="overflow-x-auto transition-all">
           <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-slate-700 bg-slate-100 border-b border-slate-200">
               <tr>
@@ -2475,6 +2503,7 @@ function ModuleRanking({ files, bgClass }: any) {
             </tbody>
           </table>
         </div>
+        )}
       </section>
     </div>
   );
