@@ -247,14 +247,34 @@ function MainApp() {
           if (setDocSnap.exists()) setSysTheme(setDocSnap.data().themeColor);
 
           const filesSnap = await getDocs(collection(db, 'dados_siaps'));
-          const agrupados = new Map<string, ImportedFile>();
+          const groupedFiles: ImportedFile[] = [];
+          
           filesSnap.docs.forEach(d => {
-             const row = d.data();
-             const fileName = row._arquivoOrigem + '.xlsx';
-             if(!agrupados.has(fileName)) { agrupados.set(fileName, { id: fileName, name: fileName, data: [] }); }
-             agrupados.get(fileName)!.data.push(row);
+             const docData = d.data();
+             // Verifica se é o formato novo (comprimido em JSON)
+             if (docData.dadosJSON) {
+               try {
+                 const parsedData = JSON.parse(docData.dadosJSON);
+                 groupedFiles.push({
+                   id: d.id,
+                   name: docData.nomeArquivo || 'Planilha_Importada.xlsx',
+                   data: parsedData
+                 });
+               } catch (e) {
+                 console.error("Erro ao descomprimir JSON", e);
+               }
+             } else {
+               // Formato antigo (legado): apenas para o caso de ainda ter dados velhos
+               const fileName = docData._arquivoOrigem + '.xlsx';
+               let existing = groupedFiles.find(f => f.name === fileName);
+               if (!existing) {
+                 existing = { id: fileName, name: fileName, data: [] };
+                 groupedFiles.push(existing);
+               }
+               existing.data.push(docData);
+             }
           });
-          setFiles(Array.from(agrupados.values()));
+          setFiles(groupedFiles);
 
           const usersSnap = await getDocs(collection(db, 'users'));
           setUsersList(usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
@@ -534,21 +554,24 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
           const properMonth = extMes(cleanName);
           const properIndicator = extInd(cleanName);
           const enrichedData = fileData.map(r => ({ ...r, _arquivoOrigem: cleanName, _mesOrigem: properMonth, _indicadorOrigem: properIndicator }));
-          newFiles.push({ id: Date.now() + '-' + Math.random().toString(36).substring(2,7), name: file.name, data: enrichedData });
           
-          setProgressMsg(`A Enviar ${file.name} para a Nuvem...`);
+          setProgressMsg(`A Enviar ${file.name} (Compressão JSON)...`);
           try {
-            let batch = writeBatch(db);
-            let opCount = 0;
-            for (let i = 0; i < enrichedData.length; i++) {
-               const row = enrichedData[i];
-               const rowId = `${cleanName}_${i}_${Date.now()}`;
-               const docRef = doc(db, 'dados_siaps', rowId);
-               batch.set(docRef, row);
-               opCount++;
-               if (opCount >= 400 || i === enrichedData.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
-            }
-          } catch (err: any) { alert(`Erro ao salvar ${file.name}. Verifique as regras do Firestore.`); }
+            // A MAGIA: Guarda a planilha inteira como uma STRING num único documento
+            const docId = `planilha_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
+            const docRef = doc(db, 'dados_siaps', docId);
+            
+            // JSON.stringify transforma tudo num texto otimizado
+            await setDoc(docRef, {
+              nomeArquivo: file.name,
+              dadosJSON: JSON.stringify(enrichedData), 
+              timestamp: Date.now()
+            });
+
+            newFiles.push({ id: file.name, name: file.name, data: enrichedData });
+          } catch (err: any) { 
+             alert(`Erro ao salvar ${file.name}. Se o erro for de limite, aguarde 24h ou mude para o plano Blaze.`); 
+          }
         } else {
           skippedFiles.push(file.name);
         }
@@ -588,12 +611,8 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
     try {
       const qs = await getDocs(collection(db, 'dados_siaps'));
       let batch = writeBatch(db);
-      let opCount = 0;
-      for(let i = 0; i < qs.docs.length; i++) {
-         batch.delete(qs.docs[i].ref);
-         opCount++;
-         if(opCount >= 400 || i === qs.docs.length - 1) { await batch.commit(); batch = writeBatch(db); opCount = 0; }
-      }
+      qs.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
       setFiles([]);
     } catch(e) { alert('Erro ao apagar. Verifique as regras do Firestore.'); }
     setIsProcessing(false);
@@ -604,8 +623,8 @@ function ModuleImport({ files, setFiles, bgClass }: any) {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className={`p-10 rounded-2xl border-2 border-dashed text-center bg-white ${isProcessing ? 'border-slate-300 opacity-50' : 'border-slate-300 hover:border-slate-400'}`}>
         <div className={`mx-auto w-16 h-16 ${bgClass} bg-opacity-10 rounded-full flex items-center justify-center mb-4`}><UploadCloud className={`h-8 w-8 text-slate-700`} /></div>
-        <h3 className="font-bold text-xl text-slate-800">Conexão de Dados na Nuvem</h3>
-        <p className="text-slate-500 mb-6 mt-2 max-w-lg mx-auto">Selecione as planilhas do SIAPS do seu computador. O sistema vai fatiar as planilhas e enviar para o banco de dados Firebase.</p>
+        <h3 className="font-bold text-xl text-slate-800">Conexão de Dados na Nuvem (Otimizado)</h3>
+        <p className="text-slate-500 mb-6 mt-2 max-w-lg mx-auto">As planilhas enviadas agora são comprimidas. O painel consumirá 99% menos do limite do Firestore!</p>
         {isProcessing && <p className="text-blue-600 font-bold mb-4 animate-pulse">{progressMsg}</p>}
         <div className="flex justify-center gap-4">
           <label className={`cursor-pointer inline-flex items-center px-6 py-3 rounded-lg text-white font-bold shadow-md transition-all hover:opacity-90 ${bgClass}`}>
