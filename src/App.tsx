@@ -375,6 +375,27 @@ const formatCPF = (value: string) => {
     .replace(/(\d{3})(\d{1,2})/, '$1-$2') // Adiciona o traço
     .replace(/(-\d{2})\d+?$/, '$1'); // Impede que digitem mais do que 11 números
 };
+// Função matemática para validar se o CPF é real
+const isValidCPF = (cpf: string) => {
+  cpf = cpf.replace(/\D/g, '');
+  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false; // Bloqueia 999.999.999-99
+  
+  let soma = 0;
+  let resto;
+  
+  for (let i = 1; i <= 9; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (11 - i);
+  resto = (soma * 10) % 11;
+  if ((resto === 10) || (resto === 11)) resto = 0;
+  if (resto !== parseInt(cpf.substring(9, 10))) return false;
+  
+  soma = 0;
+  for (let i = 1; i <= 10; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (12 - i);
+  resto = (soma * 10) % 11;
+  if ((resto === 10) || (resto === 11)) resto = 0;
+  if (resto !== parseInt(cpf.substring(10, 11))) return false;
+  
+  return true;
+};
 
 function LoginScreen({ bgClass }: any) {
   const [isRegister, setIsRegister] = useState(false);
@@ -390,14 +411,14 @@ function LoginScreen({ bgClass }: any) {
     setErrorMsg('');
     const frm = e.target as any;
     
-    // Limpa o CPF para ter só números e cria o "falso" e-mail do sistema para o Firebase
     const cleanCPF = cpfInput.replace(/\D/g, ''); 
-    if (cleanCPF.length !== 11) {
-      setErrorMsg('O CPF deve conter exatamente 11 números.');
+    if (!isValidCPF(cleanCPF)) {
+      setErrorMsg('CPF inválido. Verifique os números digitados.');
       return;
     }
     const systemEmail = `${cleanCPF}@embu.aps.br`; 
     const pass = frm.pass.value;
+    // ... o resto do try/catch continua igual ...
 
     try {
       if (isRegister) {
@@ -783,13 +804,14 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
     e.preventDefault();
     
     const cleanCPF = cpf.replace(/\D/g, ''); 
-    if (cleanCPF.length !== 11) {
-      alert('O CPF deve conter 11 números.');
+    if (!isValidCPF(cleanCPF)) {
+      alert('CPF inválido! Por favor, insira um CPF real.');
       return;
     }
     const systemEmail = `${cleanCPF}@embu.aps.br`;
 
     const scope = currentRoleObj.scope || 'geral';
+    // ... o resto da função continua igual ...
     const finalUnidades = (scope === 'unidade' || scope === 'equipe') ? checkedUnidades : [];
     const finalEquipes = scope === 'equipe' ? checkedEquipes : [];
 
