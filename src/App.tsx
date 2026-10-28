@@ -2339,22 +2339,12 @@ function ModuleRanking({ files, bgClass }: any) {
         </div>
       </div>
 
-      {/* RANKING DE EQUIPAS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+{/* RANKING DE EQUIPAS */}
+<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center justify-between">
-             <div className="flex items-center">
-               <Award className="h-5 w-5 text-indigo-600 mr-2" />
-               <h3 className="font-bold text-indigo-900">TOP 10 Melhores Equipes</h3>
-             </div>
-             <div className="relative group flex items-center">
-               <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-indigo-500 hover:text-indigo-500 hover:bg-indigo-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">i</div>
-               <div className="absolute right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 w-64 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                 <p className="text-slate-300 text-xs leading-relaxed">
-                   Calculado com a mesma regra de pesos (4, 3, 2, 1) focada apenas nos resultados individuais desta Equipe.
-                 </p>
-               </div>
-             </div>
+          <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex items-center">
+             <Award className="h-5 w-5 text-indigo-600 mr-2" />
+             <h3 className="font-bold text-indigo-900">TOP 10 Melhores Equipes</h3>
           </div>
           <div className="divide-y divide-slate-100">
              {top10Eq.map((eq, i) => (
@@ -2362,7 +2352,6 @@ function ModuleRanking({ files, bgClass }: any) {
                  <div className="flex items-center space-x-4">
                    <span className={`font-black text-lg w-6 text-center ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-400' : i === 2 ? 'text-amber-600' : 'text-slate-300'}`}>#{i + 1}</span>
                    <div>
-                     {/* Aqui separa o nome da Equipe e a UBS que guardámos com a barra "|" */}
                      <p className="font-bold text-slate-800 text-sm leading-tight mb-0.5">{eq.name.split(' | ')[0]}</p>
                      <p className="text-[10px] font-bold text-slate-400 mb-1.5 uppercase">{eq.name.split(' | ')[1]}</p>
                      <div className="flex space-x-1.5">
@@ -2384,19 +2373,9 @@ function ModuleRanking({ files, bgClass }: any) {
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-orange-50 p-4 border-b border-orange-100 flex items-center justify-between">
-             <div className="flex items-center">
-               <AlertOctagon className="h-5 w-5 text-orange-600 mr-2" />
-               <h3 className="font-bold text-orange-900">TOP 10 Piores Equipes</h3>
-             </div>
-             <div className="relative group flex items-center">
-               <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-orange-500 hover:text-orange-500 hover:bg-orange-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">i</div>
-               <div className="absolute right-0 top-full mt-2 w-64 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                 <p className="text-slate-300 text-xs leading-relaxed">
-                   Equipes com a menor média ponderada. Devem receber acompanhamento focado nos indicadores classificados como Regulares.
-                 </p>
-               </div>
-             </div>
+          <div className="bg-orange-50 p-4 border-b border-orange-100 flex items-center">
+             <AlertOctagon className="h-5 w-5 text-orange-600 mr-2" />
+             <h3 className="font-bold text-orange-900">TOP 10 Piores Equipes</h3>
           </div>
           <div className="divide-y divide-slate-100">
              {bottom10Eq.map((eq, i) => (
@@ -2426,10 +2405,35 @@ function ModuleRanking({ files, bgClass }: any) {
       </div>
 
       <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center">
-           <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
-           <h3 className="font-bold text-slate-800">Ranking de Indicadores (Total de Avaliações)</h3>
+        {/* CABEÇALHO DOS INDICADORES COM O BOTÃO 'I' */}
+        <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between relative z-10">
+           <div className="flex items-center">
+             <BarChart2 className="h-5 w-5 text-blue-600 mr-2" />
+             <h3 className="font-bold text-slate-800">Ranking de Indicadores (Total de Avaliações)</h3>
+           </div>
+           
+           <div className="relative group flex items-center">
+             <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
+               i
+             </div>
+             <div className="absolute right-0 top-full mt-2 w-72 p-4 bg-slate-800 text-white text-sm rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+               <p className="font-bold text-white mb-2">Média do Indicador</p>
+               <p className="text-slate-300 text-xs mb-3 leading-relaxed">
+                 A média ponderada revela quais indicadores têm a melhor qualidade de entrega no município. Cada avaliação de equipe tem um peso:
+               </p>
+               <ul className="text-xs space-y-2 mb-3 font-medium">
+                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-blue-400 rounded-full mr-2 shadow-sm"></span> Ótimo = 4 pontos</li>
+                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-emerald-400 rounded-full mr-2 shadow-sm"></span> Bom = 3 pontos</li>
+                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full mr-2 shadow-sm"></span> Suficiente = 2 pontos</li>
+                 <li className="flex items-center"><span className="w-2.5 h-2.5 bg-red-400 rounded-full mr-2 shadow-sm"></span> Regular = 1 ponto</li>
+               </ul>
+               <p className="text-slate-400 text-[11px] leading-tight pt-2.5 border-t border-slate-600">
+                 Os pontos são somados e divididos pelo total de avaliações do indicador.
+               </p>
+             </div>
+           </div>
         </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left whitespace-nowrap">
             <thead className="text-slate-700 bg-slate-100 border-b border-slate-200">
