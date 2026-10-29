@@ -2831,10 +2831,15 @@ function ModuleRanking({ files, allFiles, bgClass }: any) {
 
   return (
     <div className="space-y-6">
-      <section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 relative z-20">
-        <div className="flex items-center text-lg font-bold text-slate-800">
+<section className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4 relative z-20">
+        <div className="flex flex-wrap items-center text-lg font-bold text-slate-800">
           <div className={`p-2 rounded-lg mr-3 ${bgClass} bg-opacity-10`}><Trophy className={`h-6 w-6 text-blue-600`} /></div>
           Ranking de Desempenho Global
+          
+          {/* NOVA ETIQUETA: Nota Máxima sempre visível */}
+          <span className="ml-3 px-2.5 py-1 bg-slate-100 text-slate-600 text-[11px] rounded-md font-bold border border-slate-200 tracking-wide uppercase">
+            Nota Máxima: 4.00
+          </span>
           
           <div className="relative group ml-3 flex items-center">
             <div className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-slate-300 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50 font-bold text-[11px] italic transition-all cursor-help shadow-sm">
