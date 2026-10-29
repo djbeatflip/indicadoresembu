@@ -572,7 +572,15 @@ function MainApp() {
   }, []);
 
   const themes: Record<string, string> = { blue: 'bg-blue-600', emerald: 'bg-emerald-600', violet: 'bg-violet-600', slate: 'bg-slate-700' };
-  const bgClass = themes[sysTheme] || themes.blue;
+  // Dicionário de Cores do Sistema
+  const bgClass = 
+    sysTheme === 'blue' ? 'bg-blue-600' :
+    sysTheme === 'indigo' ? 'bg-indigo-600' :
+    sysTheme === 'purple' ? 'bg-purple-600' :
+    sysTheme === 'emerald' ? 'bg-emerald-600' :
+    sysTheme === 'rose' ? 'bg-rose-600' :
+    sysTheme === 'slate' ? 'bg-slate-800' :
+    'bg-blue-600'; // Cor de segurança padrão
 
   if (!isLoaded) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500 font-medium">Conectando ao Firebase Nuvem...</div>;
 
@@ -1641,10 +1649,10 @@ function ModuleSettings({ currentUser, bgClass, sysTheme, setSysTheme }: any) {
   // Cores disponíveis para o sistema
   const themes = [
     { id: 'blue', color: 'bg-blue-600', name: 'Azul' },
-    { id: 'indigo', color: 'bg-indigo-600', name: 'Índigo' },
-    { id: 'purple', color: 'bg-purple-600', name: 'Roxo' },
+    { id: 'indigo', color: 'bg-indigo-600', name: 'Roxo' },
+    { id: 'purple', color: 'bg-purple-600', name: 'Rosa' },
     { id: 'emerald', color: 'bg-emerald-600', name: 'Verde' },
-    { id: 'rose', color: 'bg-rose-600', name: 'Rosa' },
+    { id: 'rose', color: 'bg-rose-600', name: 'Vermelho' },
     { id: 'slate', color: 'bg-slate-800', name: 'Escuro' }
   ];
 
@@ -2269,10 +2277,20 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
           <h3 className="text-base font-bold text-slate-800 mb-1">Comparativo por Equipe</h3>
           <div className="w-full overflow-x-auto pb-2">
             <div style={{ minWidth: teamsComparisonData.length > 20 ? `${teamsComparisonData.length * 32}px` : '100%', height: 290 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
+            <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 120 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+    
+    {/* EIXO X ARRUMADO: Altura expandida (120) e texto ancorado no final para não vazar */}
+            <XAxis 
+             dataKey="name" /* <-- ATENÇÃO: Se antes estava 'equipe' ou outro nome, mantenha o seu */
+             angle={-45} 
+             textAnchor="end" 
+             interval={0} 
+             height={120} 
+             tick={{ fontSize: 10, fill: '#64748b' }} 
+             tickMargin={10}
+             />
                   <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
                   <Tooltip formatter={(val: number, _n: string, p: any) => [formatVal(val), p.payload.fullName || activeVariable]} />
                   <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
