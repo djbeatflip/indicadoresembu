@@ -221,20 +221,11 @@ const buildRows = (rows: any[][]) => {
 };
 
 // ==========================================
-// MÓDULO DE RELATÓRIOS (PDF PROFISSIONAL VIA CDN)
+// MÓDULO DE RELATÓRIOS (TOP 10 DINÂMICO E IMPRESSÃO NATIVA)
 // ==========================================
 function ModuleReports({ files, bgClass }: any) {
   const [reportType, setReportType] = React.useState('1');
   const [selectedMonth, setSelectedMonth] = React.useState('');
-  const reportRef = React.useRef(null);
-
-  // 1. Injeta o gerador de PDF diretamente no navegador (Ignora o NPM do StackBlitz)
-  React.useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
-    script.async = true;
-    document.body.appendChild(script);
-  }, []);
 
   const mesesDisponiveis = React.useMemo(() => {
     if (!files || files.length === 0) return ['Agosto'];
@@ -256,49 +247,101 @@ function ModuleReports({ files, bgClass }: any) {
     }
   }, [mesesDisponiveis, selectedMonth]);
 
-  // Função mágica que gera o PDF
-  const handleGeneratePDF = () => {
-    const element = reportRef.current;
-    if (!element) return;
-
-    // @ts-ignore
-    if (typeof window !== 'undefined' && window.html2pdf) {
-      const opt = {
-        margin:       [10, 10, 10, 10], // Margens do PDF
-        filename:     `Relatorio_APS_${selectedMonth}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-      
-      // @ts-ignore
-      window.html2pdf().set(opt).from(element).save();
-    } else {
-      alert("A ferramenta de PDF está a carregar... Aguarde 2 segundos e clique novamente!");
+  // MOTOR INTELIGENTE: Caçador de colunas (Ignora letras maiúsculas/minúsculas)
+  const getDynamicValue = (row: any, keywords: string[]) => {
+    const keys = Object.keys(row);
+    for (const key of keys) {
+      const lowerKey = key.toLowerCase();
+      if (keywords.some(word => lowerKey.includes(word))) {
+        return row[key];
+      }
     }
+    return 'Não Identificado';
+  };
+
+  const analiseDoMes = React.useMemo(() => {
+    let totalRegistros = 0;
+    const unidadesCount: Record<string, number> = {};
+    const equipesCount: Record<string, number> = {};
+
+    files.forEach((f: any) => {
+      if (f.data) {
+        f.data.forEach((row: any) => {
+          if (row._mesOrigem === selectedMonth) {
+            totalRegistros++;
+            
+            // Procura o nome da unidade e equipe usando palavras-chave comuns nas colunas do SIAPS
+            const nomeUnidade = getDynamicValue(row, ['unidade', 'estab', 'cnes', 'ubs', 'usf']);
+            const nomeEquipe = getDynamicValue(row, ['equipe', 'ine']);
+            
+            // Só contabiliza se for um texto válido
+            if (nomeUnidade && typeof nomeUnidade === 'string' && nomeUnidade !== 'Não Identificado') {
+              const cleanUnidade = nomeUnidade.trim().toUpperCase();
+              unidadesCount[cleanUnidade] = (unidadesCount[cleanUnidade] || 0) + 1;
+            }
+            
+            if (nomeEquipe && typeof nomeEquipe === 'string' && nomeEquipe !== 'Não Identificado') {
+              const cleanEquipe = nomeEquipe.trim().toUpperCase();
+              equipesCount[cleanEquipe] = (equipesCount[cleanEquipe] || 0) + 1;
+            }
+          }
+        });
+      }
+    });
+
+    // Ordena do maior para o menor
+    const topUnidades = Object.entries(unidadesCount).sort((a, b) => b[1] - a[1]);
+    const topEquipes = Object.entries(equipesCount).sort((a, b) => b[1] - a[1]);
+
+    return {
+      totalRegistros,
+      topUnidades,
+      topEquipes,
+      qtdUnidades: topUnidades.length,
+      qtdEquipes: topEquipes.length
+    };
+  }, [files, selectedMonth]);
+
+  const handlePrint = () => {
+    window.print();
   };
 
   const renderReportContent = () => {
+    if (analiseDoMes.totalRegistros === 0) {
+      return (
+        <div className="p-8 text-center text-red-500 font-bold border-2 border-red-200 bg-red-50 rounded-lg print:hidden">
+          Não existem dados importados no sistema referentes ao mês de {selectedMonth}.
+        </div>
+      );
+    }
+
+    // EXTRAÇÃO DOS TOP 10 PARA TEXTO
+    const top10Unidades = analiseDoMes.topUnidades.slice(0, 10);
+    const top10Equipes = analiseDoMes.topEquipes.slice(0, 10);
+    
+    // As 3 Unidades que precisam melhorar (as últimas da lista)
+    const unidadesParaMelhorar = analiseDoMes.topUnidades.slice(-3).reverse();
+
     if (reportType === '1') {
       return (
         <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
-          <p>O presente relatório apresenta a análise de desempenho do município de <strong>Embu das Artes</strong> referente às metas dos indicadores da Atenção Primária à Saúde (APS) no mês de <strong>{selectedMonth}</strong>. A avaliação tem como base os dados extraídos do sistema SIAPS, refletindo os esforços consolidados de toda a rede municipal.</p>
+          <p>O presente relatório apresenta a análise executiva de desempenho do município de <strong>Embu das Artes</strong> referente às metas da Atenção Primária à Saúde (APS) no ciclo de <strong>{selectedMonth}</strong>. A avaliação tem como base o cruzamento matemático dos dados importados do sistema SIAPS, englobando um processamento total de <strong>{analiseDoMes.totalRegistros.toLocaleString('pt-BR')} registros validados</strong> gerados por {analiseDoMes.qtdUnidades} estabelecimentos de saúde.</p>
           
           <div className="mt-8">
-            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">1. Destaques Positivos (Pontos Fortes)</h3>
-            <p>No período analisado, o município obteve um desempenho de destaque no <strong>Indicador de Proporção de Gestantes com Pelo Menos 6 Consultas Pré-natal</strong> e no <strong>Rastreamento de Câncer do Colo do Útero</strong>. Observou-se uma evolução contínua na captação precoce, resultado direto das campanhas de sensibilização e do monitoramento ativo realizado pelas unidades de saúde.</p>
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">1. Avaliação Consolidada (Top 3 Destaques)</h3>
+            <p>No mês de {selectedMonth}, a rede municipal demonstrou resiliência operacional. Destacaram-se nominalmente as unidades <strong>{top10Unidades[0]?.[0]}</strong>, <strong>{top10Unidades[1]?.[0]}</strong> e <strong>{top10Unidades[2]?.[0]}</strong>, que assumiram a liderança no volume de consolidação e transmissão consistente de dados de produção para a base central.</p>
           </div>
 
           <div className="mt-8">
-            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Alertas de Desempenho (Pontos a Melhorar)</h3>
-            <p>Apesar dos avanços, os dados apontam uma vulnerabilidade no <strong>Indicador de Aferição de Pressão Arterial (Hipertensos)</strong> e na <strong>Solicitação de Hemoglobina Glicada (Diabéticos)</strong>. A taxa de registros invalidados ou ausentes no sistema e-SUS APS sugere subnotificação ou falha na rotina de acompanhamento contínuo dos pacientes crônicos.</p>
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Alertas Estratégicos (Baixa Consolidação)</h3>
+            <p>Apesar do engajamento do município, identificou-se uma defasagem de processamento que requer intervenção gerencial. As unidades <strong>{unidadesParaMelhorar[0]?.[0]}</strong> e <strong>{unidadesParaMelhorar[1]?.[0]}</strong> registraram os menores volumes de produção validada no período, sugerindo possíveis falhas de conexão, ausência de profissionais ou acúmulo de fichas físicas retidas sem digitação.</p>
           </div>
 
           <div className="mt-8">
-            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">3. Plano de Ação Sugerido</h3>
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">3. Plano de Ação Estratégico</h3>
             <ul className="list-disc pl-6 space-y-2 mt-2">
-              <li><strong>Capacitação de Registros:</strong> Realizar alinhamento técnico com as equipes de enfermagem e medicina para garantir que o preenchimento do CDS/PEC reflita os atendimentos a crônicos de forma padronizada.</li>
-              <li><strong>Busca Ativa Focada:</strong> Gerar listas nominais dos pacientes com hipertensão e diabetes que não comparecem há mais de 5 meses, priorizando a visita domiciliar pelos Agentes Comunitários de Saúde (ACS).</li>
+              <li><strong>Auditoria Expressa:</strong> A coordenação deve realizar uma verificação das transmissões pendentes nas unidades em alerta, garantindo que o lote de dados do Prontuário Eletrônico seja processado antes do fecho da competência.</li>
+              <li><strong>Valorização:</strong> Promover o reconhecimento institucional das equipes vinculadas à {top10Unidades[0]?.[0]}, utilizando os seus processos de trabalho como modelo para a rede.</li>
             </ul>
           </div>
         </div>
@@ -308,18 +351,27 @@ function ModuleReports({ files, bgClass }: any) {
     if (reportType === '2') {
       return (
         <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
-          <p>Este documento consolida a análise comparativa de desempenho entre as Unidades Básicas de Saúde (UBS / USF) do município no mês de <strong>{selectedMonth}</strong>, identificando padrões operacionais e gargalos de gestão local.</p>
+          <p>O relatório gerencial abaixo detalha o ranking das <strong>10 Unidades Básicas de Saúde (UBS/USF)</strong> de Embu das Artes que apresentaram o melhor rendimento na estruturação e envio de dados da Atenção Primária durante o mês de <strong>{selectedMonth}</strong>.</p>
           
           <div className="mt-8">
-            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">1. Unidades em Destaque (Evolução)</h3>
-            <p>As unidades <strong>USF Centro</strong> e <strong>UBS São Marcos</strong> apresentaram a maior curva de crescimento nos indicadores de vacinação infantil (Poliomielite e Pentavalente). A estabilidade nas agendas e a triagem eficiente na recepção foram determinantes para o alcance integral das metas estabelecidas.</p>
+            <h3 className="font-bold text-lg mb-4 border-b border-gray-400 pb-1 text-black uppercase">1. As 10 Unidades de Maior Desempenho</h3>
+            <p className="mb-4">O ranqueamento a seguir reflete diretamente o engajamento das gerências locais e a diligência na rotina de digitação dos atendimentos:</p>
+            
+            <ol className="list-decimal pl-6 space-y-3 font-medium">
+              {top10Unidades.map((unidade, index) => (
+                <li key={index} className="pl-2 border-b border-gray-100 pb-1">
+                  <span className="font-bold text-black">{unidade[0]}</span> 
+                  <span className="text-gray-600 font-normal ml-2">— Processou {unidade[1].toLocaleString('pt-BR')} registros.</span>
+                </li>
+              ))}
+            </ol>
+            
+            {top10Unidades.length === 0 && <p className="italic text-gray-500">Nenhum dado de unidade encontrado neste mês.</p>}
           </div>
           
           <div className="mt-8">
-            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Plano de Ação por Gestão de Unidade</h3>
-            <ul className="list-disc pl-6 space-y-2 mt-2">
-              <li><strong>Revisão de Agenda:</strong> As gerências das unidades com déficit em pré-natal devem reservar cotas semanais exclusivas para gestantes.</li>
-            </ul>
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Considerações e Recomendações</h3>
+            <p>O desempenho superior da <strong>{top10Unidades[0]?.[0]}</strong> serve como referencial analítico. Recomenda-se o mapeamento do fluxo de recepção e agendamento adotado por este estabelecimento para replicação técnica nas demais {analiseDoMes.qtdUnidades - 1} unidades da rede municipal.</p>
           </div>
         </div>
       );
@@ -327,22 +379,60 @@ function ModuleReports({ files, bgClass }: any) {
 
     return (
       <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
-        <p>Análise detalhada da microgestão em saúde, focada no rendimento das Equipes de Saúde da Família (eSF) e Equipes de Atenção Primária (eAP) durante o período de <strong>{selectedMonth}</strong>.</p>
+        <p>A presente análise detalha a microgestão em saúde, focada exclusivamente na efetividade do <strong>Top 10 das Equipes de Saúde da Família (eSF) e Atenção Primária (eAP)</strong> do município durante o ciclo de <strong>{selectedMonth}</strong>.</p>
+        
+        <div className="mt-8">
+            <h3 className="font-bold text-lg mb-4 border-b border-gray-400 pb-1 text-black uppercase">1. As 10 Equipes com Maior Produtividade Validada</h3>
+            <p className="mb-4">As equipes listadas abaixo destacaram-se pelo correto registro de CIDs, CIAPs e procedimentos, refletindo a excelência do trabalho de médicos, enfermeiros e agentes comunitários no território:</p>
+            
+            <ol className="list-decimal pl-6 space-y-3 font-medium">
+              {top10Equipes.map((equipe, index) => (
+                <li key={index} className="pl-2 border-b border-gray-100 pb-1">
+                  <span className="font-bold text-black">{equipe[0]}</span> 
+                  <span className="text-gray-600 font-normal ml-2">— Processou {equipe[1].toLocaleString('pt-BR')} atendimentos validados.</span>
+                </li>
+              ))}
+            </ol>
+            
+            {top10Equipes.length === 0 && <p className="italic text-gray-500">Nenhum dado de equipe encontrado neste mês.</p>}
+        </div>
+
+        <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Plano de Fortalecimento de Vínculo</h3>
+            <p>As equipes do ranking demonstraram alta eficiência na vinculação de pacientes. O próximo passo estratégico é utilizar a força de trabalho da <strong>{top10Equipes[0]?.[0]}</strong> para intensificar a busca ativa exclusiva aos pacientes hipertensos e diabéticos, otimizando ainda mais a pontuação do município perante o Ministério da Saúde.</p>
+        </div>
       </div>
     );
   };
 
   return (
     <div className="space-y-6">
+      {/* MAGIA DO CSS: As margens de 15mm aqui garantem que o PDF respeita o papel A4 nativamente sem esticar */}
+      <style>
+        {`
+          @media print {
+            @page {
+              size: A4 portrait;
+              margin: 15mm 15mm 15mm 15mm !important; 
+            }
+            body {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              background-color: white !important;
+            }
+          }
+        `}
+      </style>
+
       {/* CABEÇALHO DE CONTROLES */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-end justify-between">
+      <div className="print:hidden bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-end justify-between">
         <div className="flex flex-col md:flex-row gap-4 flex-1">
           <div className="w-full md:w-1/3">
             <label className="text-xs font-bold text-slate-500 tracking-wider mb-1 block uppercase">Foco da Análise</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500 bg-slate-50 font-medium">
-              <option value="1">1. Avaliação Municipal de Indicadores</option>
-              <option value="2">2. Desempenho Consolidado de Unidades</option>
-              <option value="3">3. Desempenho Operacional de Equipes</option>
+              <option value="1">1. Executivo Municipal (Top 3)</option>
+              <option value="2">2. Gerencial: Top 10 Unidades</option>
+              <option value="3">3. Operacional: Top 10 Equipes</option>
             </select>
           </div>
           <div className="w-full md:w-1/4">
@@ -355,26 +445,26 @@ function ModuleReports({ files, bgClass }: any) {
           </div>
         </div>
         
-        <button onClick={handleGeneratePDF} className={`flex items-center px-6 py-2.5 rounded-lg text-white font-bold shadow-md transition-transform hover:scale-105 active:scale-95 ${bgClass}`}>
-          <Printer className="h-5 w-5 mr-2" /> Baixar PDF Oficial
+        <button onClick={handlePrint} className={`flex items-center px-6 py-2.5 rounded-lg text-white font-bold shadow-md transition-transform hover:scale-105 active:scale-95 ${bgClass}`}>
+          <Printer className="h-5 w-5 mr-2" /> Gerar PDF / Imprimir
         </button>
       </div>
 
-      {/* ENVOLTÓRIO DA ÁREA DE IMPRESSÃO */}
-      <div className="overflow-x-auto pb-10">
-        {/* ELEMENTO CAPTURADO PELO GERADOR DE PDF (ref={reportRef}) */}
-        <div ref={reportRef} className="bg-white border border-gray-200 p-[15mm] w-[210mm] min-h-[297mm] mx-auto flex flex-col font-serif shadow-lg">
+      {/* ÁREA DO RELATÓRIO OFICIAL */}
+      <div className="overflow-x-auto pb-10 print:overflow-visible print:pb-0">
+        {/* A classe print:w-full e print:p-0 dizem ao navegador para usar todo o A4 de acordo com o @page acima */}
+        <div className="bg-white border border-gray-200 p-[15mm] md:w-[210mm] min-h-[297mm] mx-auto flex flex-col font-serif shadow-lg print:shadow-none print:border-none print:w-full print:min-h-0 print:p-0">
           
           {/* CABEÇALHO OFICIAL */}
-          <div className="flex items-center justify-between pb-6 mb-8 border-b-2 border-gray-100">
+          <div className="flex items-center justify-between pb-6 mb-8 border-b-2 border-gray-300 print:border-black">
             <div className="w-1/3">
               <div className="text-[#e87a71] font-bold text-3xl leading-none">
                 Cidade de <br/><span className="text-[#f1a46b]">Embu</span><br/><span className="text-[#a1c181] text-xl font-normal">das Artes</span>
               </div>
             </div>
-            <div className="w-2/3 text-right text-gray-700">
+            <div className="w-2/3 text-right text-gray-700 print:text-black">
               <h1 className="text-lg font-bold">Prefeitura da Estância Turística de Embu das Artes</h1>
-              <h2 className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">Estado de São Paulo</h2>
+              <h2 className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest print:text-black">Estado de São Paulo</h2>
               <h3 className="text-base font-bold mt-2">Secretaria Municipal de Saúde</h3>
             </div>
           </div>
@@ -384,20 +474,20 @@ function ModuleReports({ files, bgClass }: any) {
             <h2 className="text-xl font-bold text-black border-b border-gray-400 pb-2 inline-block uppercase tracking-wide">
               Parecer Analítico de Desempenho - APS
             </h2>
-            <p className="text-xs text-gray-500 mt-3 font-bold uppercase tracking-widest">Ref: {selectedMonth} / {new Date().getFullYear()}</p>
+            <p className="text-xs text-gray-500 mt-3 font-bold uppercase tracking-widest print:text-black">Ref: {selectedMonth} / {new Date().getFullYear()}</p>
           </div>
 
           {/* CORPO DO DOCUMENTO */}
-          <div className="flex-1">
+          <div className="flex-1 text-black">
             {renderReportContent()}
           </div>
 
           {/* RODAPÉ OFICIAL */}
-          <div className="mt-16 pt-6 border-t-2 border-gray-200 flex justify-between items-end text-[10px] text-gray-600">
+          <div className="mt-16 pt-6 border-t-2 border-gray-300 print:border-black flex justify-between items-end text-[10px] text-gray-600 print:text-black">
             <div className="text-left font-semibold space-y-1">
               <p>Prefeitura da Estância Turística de Embu das Artes</p>
               <p>Secretaria Municipal de Saúde</p>
-              <p className="text-gray-400">Rua Andrônico dos Prazeres Gonçalves, 114 — Centro</p>
+              <p className="text-gray-500 print:text-black">Rua Andrônico dos Prazeres Gonçalves, 114 — Centro</p>
             </div>
             <div className="text-right font-semibold space-y-1">
               <p>Telefone: (11) 4785-3500</p>
@@ -521,8 +611,9 @@ function MainApp() {
             <Trophy className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Ranking</span>}
           </button>
 
-          <button onClick={() => setActiveModule('reports')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'reports' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Relatórios" : ""}>
-            <Printer className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Relatórios</span>}
+{/* BOTÃO DE RELATÓRIOS (INATIVO TEMPORARIAMENTE) */}
+<button disabled className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl font-medium text-sm text-slate-500 opacity-50 cursor-not-allowed`} title={!isSidebarOpen ? "Relatórios (Inativo)" : ""}>
+            <Printer className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Relatórios <span className="text-[10px] ml-2 bg-slate-800 px-2 py-0.5 rounded-full">Em breve</span></span>}
           </button>
 
           {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
