@@ -665,15 +665,15 @@ function MainApp() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6 print:p-0 print:overflow-visible bg-slate-50 print:bg-white">
-  {activeModule === 'dashboard' && <ModuleDashboard files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} currentUser={currentUser} usersList={usersList} />}
-  {activeModule === 'ranking' && <ModuleRanking files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} />}
-  {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
-  {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
-  {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
-  {activeModule === 'settings' && <ModuleSettings bgClass={bgClass} currentUser={currentUser} sysTheme={sysTheme} setSysTheme={setSysTheme} />}
-  {activeModule === 'reports' && <ModuleReports files={files} bgClass={bgClass} />}
-</main>
+{/* CONTEÚDO PRINCIPAL */}
+<main className="flex-1 overflow-y-auto p-6 print:p-0 print:overflow-visible bg-slate-50 print:bg-white">
+        {activeModule === 'dashboard' && <ModuleDashboard files={getFilteredFilesForUser(files, currentUser, usersList)} allFiles={files} bgClass={bgClass} currentUser={currentUser} usersList={usersList} />}
+        {activeModule === 'ranking' && <ModuleRanking files={getFilteredFilesForUser(files, currentUser, usersList)} allFiles={files} bgClass={bgClass} />}
+        {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
+        {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
+        {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
+        {activeModule === 'settings' && <ModuleSettings bgClass={bgClass} currentUser={currentUser} sysTheme={sysTheme} setSysTheme={setSysTheme} />}
+      </main>
     </div>
   );
 }
@@ -1726,7 +1726,7 @@ function ModuleSettings({ currentUser, bgClass, sysTheme, setSysTheme }: any) {
 // ==========================================
 // MÓDULO DE DASHBOARD PRINCIPAL
 // ==========================================
-function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
+function ModuleDashboard({ files, allFiles, bgClass, currentUser, usersList }: any) {
   const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
@@ -2278,27 +2278,41 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
           <div className="w-full overflow-x-auto pb-2">
             <div style={{ minWidth: teamsComparisonData.length > 20 ? `${teamsComparisonData.length * 32}px` : '100%', height: 290 }}>
             <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 120 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+  <BarChart data={teamsComparisonData} margin={{ top: 30, right: 20, left: 0, bottom: 80 }}>
+    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+    <XAxis dataKey="name" stroke="#475569" fontSize={9} tickLine={false} axisLine={false} angle={-45} textAnchor="end" interval={0} />
+    <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
     
-    {/* EIXO X ARRUMADO: Altura expandida (120) e texto ancorado no final para não vazar */}
-            <XAxis 
-             dataKey="name" /* <-- ATENÇÃO: Se antes estava 'equipe' ou outro nome, mantenha o seu */
-             angle={-45} 
-             textAnchor="end" 
-             interval={0} 
-             height={120} 
-             tick={{ fontSize: 10, fill: '#64748b' }} 
-             tickMargin={10}
-             />
-                  <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip formatter={(val: number, _n: string, p: any) => [formatVal(val), p.payload.fullName || activeVariable]} />
-                  <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                    {teamsComparisonData.map((_e, i) => <Cell key={i} fill="#1D4ED8" />)}
-                    <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v: number) => formatVal(v)} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+    {/* AQUI ESTÁ O NOVO TOOLTIP PERSONALIZADO E QUEBRADO EM VÁRIAS LINHAS */}
+    <Tooltip 
+      cursor={{ fill: '#f1f5f9' }}
+      content={({ active, payload }: any) => {
+        if (active && payload && payload.length) {
+          const data = payload[0].payload;
+          return (
+            <div className="bg-white p-3 border border-slate-200 shadow-xl rounded-lg w-52 z-50">
+              <p className="font-bold text-slate-700 text-xs mb-1.5 whitespace-normal break-words leading-tight">
+                {data.fullName || activeVariable || data.name}
+              </p>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#1D4ED8' }}></div>
+                <p className="text-sm font-black text-slate-800">
+                  {formatVal(payload[0].value)}
+                </p>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      }}
+    />
+
+    <Bar dataKey="valor" radius={[4, 4, 0, 0]} maxBarSize={40}>
+      {teamsComparisonData.map((_e, i) => <Cell key={i} fill="#1D4ED8" />)}
+      <LabelList dataKey="valor" position="top" fontSize={10} fontWeight="bold" formatter={(v: number) => formatVal(v)} />
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
             </div>
           </div>
         </div>
@@ -2472,8 +2486,10 @@ function ModuleDashboard({ files, bgClass, currentUser, usersList }: any) {
 // ==========================================
 // MÓDULO: RANKING GERAL
 // ==========================================
-function ModuleRanking({ files, bgClass }: any) {
-  const rawAllData = useMemo(() => files.flatMap((f: any) => f.data), [files]);
+function ModuleRanking({ files, allFiles, bgClass }: any) {
+  // Ignorar filtro de equipe nos perfis: Substitua 'files' por 'allFiles' nas duas vezes que ele aparece nesta linha
+  const rawAllData = useMemo(() => allFiles.flatMap((f: any) => f.data), [allFiles]);
+  
   const columns = useMemo(() => Array.from(new Set(rawAllData.flatMap(Object.keys))).filter(c => c && !String(c).startsWith('_') && !String(c).toUpperCase().includes('EMPTY') && String(c).trim() !== ''), [rawAllData]);
 
   const colUnidade = useMemo(() => {
