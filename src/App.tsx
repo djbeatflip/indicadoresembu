@@ -1305,30 +1305,51 @@ function ModuleUsers({ usersList, setUsersList, files = [], bgClass }: any) {
               const eList = Array.isArray(u.equipes) ? u.equipes : u.equipe ? [u.equipe] : [];
               return (
                 <tr key={u.id} className="border-b hover:bg-slate-50">
-                  <td className="p-2 font-medium">{u.name}</td>
-                  <td className="p-2 text-slate-500">{u.cpf ? formatCPF(u.cpf) : 'Migrar para CPF'}</td>
-                  <td className="p-2">
-                    <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  <td className="p-2 font-medium align-middle">{u.name}</td>
+                  <td className="p-2 text-slate-500 align-middle">{u.cpf ? formatCPF(u.cpf) : 'Migrar para CPF'}</td>
+                  
+                  {/* CÉLULA DE PERFIL (Badge Colorido) */}
+                  <td className="p-2 align-middle">
+                    <span className={`inline-block px-2.5 py-1 rounded font-bold text-[10px] uppercase tracking-wider whitespace-nowrap ${
+                      u.role === 'Administrador' ? 'bg-purple-100 text-purple-700' :
+                      u.role === 'Coordenador' ? 'bg-indigo-100 text-indigo-700' :
+                      u.role === 'Gerente' ? 'bg-blue-100 text-blue-700' : 
+                      'bg-slate-100 text-slate-700'
+                    }`}>
                       {u.role}
                     </span>
                   </td>
-                  <td className="p-2 text-xs text-slate-600 max-w-xs">
-                    {eList.length > 0 ? (
-                      <div><strong>Equipes:</strong> {eList.join(', ')}</div>
+                  
+                  {/* CÉLULA DE ACESSO LIBERADO (Resumo Inteligente para não alargar a linha) */}
+                  <td className="p-2 align-middle">
+                    {u.role === 'Administrador' ? (
+                      <span className="text-slate-400 text-xs font-semibold italic">Acesso Geral</span>
+                    ) : eList.length > 0 ? (
+                      <div className="cursor-help inline-block" title={`Equipes:\n${eList.join('\n')}`}>
+                        <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded text-[11px] font-bold whitespace-nowrap transition-colors hover:bg-slate-200 shadow-sm">
+                          {eList.length === 1 ? `1 Equipe` : `${eList.length} Equipes`}
+                        </span>
+                      </div>
                     ) : uList.length > 0 ? (
-                      <div><strong>Unidades:</strong> {uList.join(', ')}</div>
+                      <div className="cursor-help inline-block" title={`Unidades:\n${uList.join('\n')}`}>
+                        <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded text-[11px] font-bold whitespace-nowrap transition-colors hover:bg-slate-200 shadow-sm">
+                          {uList.length === 1 ? `1 Unidade` : `${uList.length} Unidades`}
+                        </span>
+                      </div>
                     ) : (
-                      <span className="text-slate-400">Conforme Perfil / Geral</span>
+                      <span className="text-slate-400 text-xs font-semibold italic">Sem vínculo</span>
                     )}
                   </td>
-                  <td className="p-2 text-right space-x-2 whitespace-nowrap">
-                    <button onClick={() => handleResetPassword(u)} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[11px] font-bold" title="Resetar Senha">
+                  
+                  {/* CÉLULA DE AÇÕES */}
+                  <td className="p-2 text-right space-x-2 whitespace-nowrap align-middle">
+                    <button onClick={() => handleResetPassword(u)} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded text-[11px] font-bold transition-colors" title="Resetar Senha">
                       Reset
                     </button>
-                    <button onClick={() => startEdit(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold">
+                    <button onClick={() => startEdit(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold transition-colors">
                       Editar
                     </button>
-                    <button onClick={() => handleDeleteUser(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-red-100 text-red-600 rounded text-[11px] font-bold">
+                    <button onClick={() => handleDeleteUser(u)} className="px-2.5 py-1 bg-slate-100 hover:bg-red-100 text-red-600 rounded text-[11px] font-bold transition-colors">
                       X
                     </button>
                   </td>
