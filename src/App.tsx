@@ -417,10 +417,12 @@ const isValidCPF = (cpf: string) => {
   return true;
 };
 
+// ==========================================
+// TELA DE LOGIN RESTRITO (ACESSO POR CPF)
+// ==========================================
 function LoginScreen({ bgClass }: any) {
-  const [isRegister, setIsRegister] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [cpfInput, setCpfInput] = useState(''); // Estado que guarda o que o usuário digita
+  const [cpfInput, setCpfInput] = useState('');
 
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCpfInput(formatCPF(e.target.value));
@@ -436,42 +438,36 @@ function LoginScreen({ bgClass }: any) {
       setErrorMsg('CPF inválido. Verifique os números digitados.');
       return;
     }
+    
     const systemEmail = `${cleanCPF}@embu.aps.br`; 
     const pass = frm.pass.value;
-    // ... o resto do try/catch continua igual ...
 
     try {
-      if (isRegister) {
-        const nome = frm.nome.value;
-        const userCred = await createUserWithEmailAndPassword(auth, systemEmail, pass);
-        // Ao salvar no banco de dados (users), salvamos o CPF limpo para referência
-        await setDoc(doc(db, 'users', userCred.user.uid), { cpf: cleanCPF, emailSystem: systemEmail, name: nome, role: 'Administrador' });
-      } else {
-        await signInWithEmailAndPassword(auth, systemEmail, pass);
-      }
+      // Apenas faz o login. A criação de contas foi totalmente removida daqui.
+      await signInWithEmailAndPassword(auth, systemEmail, pass);
     } catch (err: any) {
-      setErrorMsg(err.message.includes('user-not-found') || err.message.includes('invalid-credential') ? 'CPF ou palavra-passe incorretos.' : err.message);
+      setErrorMsg(err.message.includes('user-not-found') || err.message.includes('invalid-credential') ? 'CPF ou senha incorretos.' : err.message);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
       <div className="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-slate-200">
-        <div className="flex justify-center mb-6"><div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}><Shield className={`h-10 w-10 text-slate-800`} /></div></div>
-        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">Indicadores APS<br/><span className="text-lg font-medium text-slate-500">Embu das Artes</span></h2>
+        <div className="flex justify-center mb-6">
+          <div className={`p-4 rounded-full ${bgClass} bg-opacity-10`}>
+            <Shield className={`h-10 w-10 text-slate-800`} />
+          </div>
+        </div>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-2 leading-tight">
+          Indicadores APS<br/>
+          <span className="text-lg font-medium text-slate-500">Embu das Artes</span>
+        </h2>
         
-        <p className="text-center text-slate-500 text-sm mb-6">{isRegister ? 'Cadastro de Administrador Master' : 'Acesso ao Sistema'}</p>
+        <p className="text-center text-slate-500 text-sm mb-6">Acesso ao Sistema</p>
         
         {errorMsg && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-4 text-center border border-red-200">{errorMsg}</div>}
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isRegister && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label>
-              <input name="nome" type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
-            </div>
-          )}
-          
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">CPF</label>
             <input 
@@ -486,26 +482,23 @@ function LoginScreen({ bgClass }: any) {
           </div>
           
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-semibold text-slate-600">Senha (Mín. 6)</label>
-              {/* O botão 'Esqueci a Senha' foi removido propositadamente daqui */}
-            </div>
-            <input name="pass" type="password" required minLength={6} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" />
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Senha</label>
+            <input 
+              name="pass" 
+              type="password" 
+              required 
+              minLength={6} 
+              className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500" 
+            />
           </div>
           
           <button type="submit" className={`w-full ${bgClass} hover:opacity-90 text-white font-bold py-2.5 rounded-lg transition-opacity flex justify-center items-center`}>
-            {isRegister ? 'Criar Conta Master' : <><LogIn className="h-4 w-4 mr-2" /> Entrar no Sistema</>}
+            <LogIn className="h-4 w-4 mr-2" /> Entrar
           </button>
         </form>
         
         <div className="mt-6 text-center text-[11px] text-slate-400 font-medium">
-          Esqueceu a senha? Solicite ao seu Administrador.
-        </div>
-        
-        <div className="mt-4 text-center">
-          <button type="button" onClick={() => {setIsRegister(!isRegister); setErrorMsg(''); setCpfInput('');}} className="text-xs text-slate-500 hover:underline">
-            {isRegister ? 'Fazer Login' : 'Primeiro Acesso? Criar Administrador Master'}
-          </button>
+          Primeiro acesso ou esqueceu a senha?<br/>Solicite ao Administrador do Sistema.
         </div>
       </div>
     </div>
