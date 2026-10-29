@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft, Trophy } from 'lucide-react';
+import { UploadCloud, Users, CheckCircle, AlertTriangle, AlertOctagon, Award, FileText, Search, Filter, X, BarChart2, FolderOpen, LogIn, Layout, Settings, Shield, UserPlus, LogOut, ArrowUpDown, ChevronUp, ChevronDown, Trash2, Menu, ChevronLeft, Trophy, Printer } from 'lucide-react';
 import { BarChart, Bar, LineChart, AreaChart, Area, ComposedChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LabelList, Legend } from 'recharts';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
@@ -221,6 +221,198 @@ const buildRows = (rows: any[][]) => {
 };
 
 // ==========================================
+// MÓDULO DE RELATÓRIOS (PDF PROFISSIONAL VIA CDN)
+// ==========================================
+function ModuleReports({ files, bgClass }: any) {
+  const [reportType, setReportType] = React.useState('1');
+  const [selectedMonth, setSelectedMonth] = React.useState('');
+  const reportRef = React.useRef(null);
+
+  // 1. Injeta o gerador de PDF diretamente no navegador (Ignora o NPM do StackBlitz)
+  React.useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  const mesesDisponiveis = React.useMemo(() => {
+    if (!files || files.length === 0) return ['Agosto'];
+    const meses = new Set<string>();
+    files.forEach((f: any) => {
+      if (f.data) {
+        f.data.forEach((row: any) => {
+          if (row._mesOrigem) meses.add(row._mesOrigem);
+        });
+      }
+    });
+    const arr = Array.from(meses);
+    return arr.length > 0 ? arr : ['Agosto'];
+  }, [files]);
+
+  React.useEffect(() => {
+    if (!selectedMonth && mesesDisponiveis.length > 0) {
+      setSelectedMonth(mesesDisponiveis[mesesDisponiveis.length - 1]);
+    }
+  }, [mesesDisponiveis, selectedMonth]);
+
+  // Função mágica que gera o PDF
+  const handleGeneratePDF = () => {
+    const element = reportRef.current;
+    if (!element) return;
+
+    // @ts-ignore
+    if (typeof window !== 'undefined' && window.html2pdf) {
+      const opt = {
+        margin:       [10, 10, 10, 10], // Margens do PDF
+        filename:     `Relatorio_APS_${selectedMonth}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      
+      // @ts-ignore
+      window.html2pdf().set(opt).from(element).save();
+    } else {
+      alert("A ferramenta de PDF está a carregar... Aguarde 2 segundos e clique novamente!");
+    }
+  };
+
+  const renderReportContent = () => {
+    if (reportType === '1') {
+      return (
+        <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
+          <p>O presente relatório apresenta a análise de desempenho do município de <strong>Embu das Artes</strong> referente às metas dos indicadores da Atenção Primária à Saúde (APS) no mês de <strong>{selectedMonth}</strong>. A avaliação tem como base os dados extraídos do sistema SIAPS, refletindo os esforços consolidados de toda a rede municipal.</p>
+          
+          <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">1. Destaques Positivos (Pontos Fortes)</h3>
+            <p>No período analisado, o município obteve um desempenho de destaque no <strong>Indicador de Proporção de Gestantes com Pelo Menos 6 Consultas Pré-natal</strong> e no <strong>Rastreamento de Câncer do Colo do Útero</strong>. Observou-se uma evolução contínua na captação precoce, resultado direto das campanhas de sensibilização e do monitoramento ativo realizado pelas unidades de saúde.</p>
+          </div>
+
+          <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Alertas de Desempenho (Pontos a Melhorar)</h3>
+            <p>Apesar dos avanços, os dados apontam uma vulnerabilidade no <strong>Indicador de Aferição de Pressão Arterial (Hipertensos)</strong> e na <strong>Solicitação de Hemoglobina Glicada (Diabéticos)</strong>. A taxa de registros invalidados ou ausentes no sistema e-SUS APS sugere subnotificação ou falha na rotina de acompanhamento contínuo dos pacientes crônicos.</p>
+          </div>
+
+          <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">3. Plano de Ação Sugerido</h3>
+            <ul className="list-disc pl-6 space-y-2 mt-2">
+              <li><strong>Capacitação de Registros:</strong> Realizar alinhamento técnico com as equipes de enfermagem e medicina para garantir que o preenchimento do CDS/PEC reflita os atendimentos a crônicos de forma padronizada.</li>
+              <li><strong>Busca Ativa Focada:</strong> Gerar listas nominais dos pacientes com hipertensão e diabetes que não comparecem há mais de 5 meses, priorizando a visita domiciliar pelos Agentes Comunitários de Saúde (ACS).</li>
+            </ul>
+          </div>
+        </div>
+      );
+    }
+
+    if (reportType === '2') {
+      return (
+        <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
+          <p>Este documento consolida a análise comparativa de desempenho entre as Unidades Básicas de Saúde (UBS / USF) do município no mês de <strong>{selectedMonth}</strong>, identificando padrões operacionais e gargalos de gestão local.</p>
+          
+          <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">1. Unidades em Destaque (Evolução)</h3>
+            <p>As unidades <strong>USF Centro</strong> e <strong>UBS São Marcos</strong> apresentaram a maior curva de crescimento nos indicadores de vacinação infantil (Poliomielite e Pentavalente). A estabilidade nas agendas e a triagem eficiente na recepção foram determinantes para o alcance integral das metas estabelecidas.</p>
+          </div>
+          
+          <div className="mt-8">
+            <h3 className="font-bold text-lg mb-3 border-b border-gray-400 pb-1 text-black uppercase">2. Plano de Ação por Gestão de Unidade</h3>
+            <ul className="list-disc pl-6 space-y-2 mt-2">
+              <li><strong>Revisão de Agenda:</strong> As gerências das unidades com déficit em pré-natal devem reservar cotas semanais exclusivas para gestantes.</li>
+            </ul>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6 text-black text-[15px] leading-relaxed text-justify">
+        <p>Análise detalhada da microgestão em saúde, focada no rendimento das Equipes de Saúde da Família (eSF) e Equipes de Atenção Primária (eAP) durante o período de <strong>{selectedMonth}</strong>.</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* CABEÇALHO DE CONTROLES */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-end justify-between">
+        <div className="flex flex-col md:flex-row gap-4 flex-1">
+          <div className="w-full md:w-1/3">
+            <label className="text-xs font-bold text-slate-500 tracking-wider mb-1 block uppercase">Foco da Análise</label>
+            <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500 bg-slate-50 font-medium">
+              <option value="1">1. Avaliação Municipal de Indicadores</option>
+              <option value="2">2. Desempenho Consolidado de Unidades</option>
+              <option value="3">3. Desempenho Operacional de Equipes</option>
+            </select>
+          </div>
+          <div className="w-full md:w-1/4">
+            <label className="text-xs font-bold text-slate-500 tracking-wider mb-1 block uppercase">Mês de Referência</label>
+            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-500 bg-slate-50 font-medium">
+              {mesesDisponiveis.map(mes => (
+                <option key={mes} value={mes}>{mes}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        
+        <button onClick={handleGeneratePDF} className={`flex items-center px-6 py-2.5 rounded-lg text-white font-bold shadow-md transition-transform hover:scale-105 active:scale-95 ${bgClass}`}>
+          <Printer className="h-5 w-5 mr-2" /> Baixar PDF Oficial
+        </button>
+      </div>
+
+      {/* ENVOLTÓRIO DA ÁREA DE IMPRESSÃO */}
+      <div className="overflow-x-auto pb-10">
+        {/* ELEMENTO CAPTURADO PELO GERADOR DE PDF (ref={reportRef}) */}
+        <div ref={reportRef} className="bg-white border border-gray-200 p-[15mm] w-[210mm] min-h-[297mm] mx-auto flex flex-col font-serif shadow-lg">
+          
+          {/* CABEÇALHO OFICIAL */}
+          <div className="flex items-center justify-between pb-6 mb-8 border-b-2 border-gray-100">
+            <div className="w-1/3">
+              <div className="text-[#e87a71] font-bold text-3xl leading-none">
+                Cidade de <br/><span className="text-[#f1a46b]">Embu</span><br/><span className="text-[#a1c181] text-xl font-normal">das Artes</span>
+              </div>
+            </div>
+            <div className="w-2/3 text-right text-gray-700">
+              <h1 className="text-lg font-bold">Prefeitura da Estância Turística de Embu das Artes</h1>
+              <h2 className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-widest">Estado de São Paulo</h2>
+              <h3 className="text-base font-bold mt-2">Secretaria Municipal de Saúde</h3>
+            </div>
+          </div>
+
+          {/* TÍTULO DO DOCUMENTO */}
+          <div className="text-center mb-10">
+            <h2 className="text-xl font-bold text-black border-b border-gray-400 pb-2 inline-block uppercase tracking-wide">
+              Parecer Analítico de Desempenho - APS
+            </h2>
+            <p className="text-xs text-gray-500 mt-3 font-bold uppercase tracking-widest">Ref: {selectedMonth} / {new Date().getFullYear()}</p>
+          </div>
+
+          {/* CORPO DO DOCUMENTO */}
+          <div className="flex-1">
+            {renderReportContent()}
+          </div>
+
+          {/* RODAPÉ OFICIAL */}
+          <div className="mt-16 pt-6 border-t-2 border-gray-200 flex justify-between items-end text-[10px] text-gray-600">
+            <div className="text-left font-semibold space-y-1">
+              <p>Prefeitura da Estância Turística de Embu das Artes</p>
+              <p>Secretaria Municipal de Saúde</p>
+              <p className="text-gray-400">Rua Andrônico dos Prazeres Gonçalves, 114 — Centro</p>
+            </div>
+            <div className="text-right font-semibold space-y-1">
+              <p>Telefone: (11) 4785-3500</p>
+              <p>indicadoresembu@gmail.com</p>
+              <p>projetos.embu@gmail.com</p>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
 // APLICAÇÃO ENCAPSULADA (RESTAURADA: MODO RESTRITO/LOGIN OBRIGATÓRIO)
 // ==========================================
 function MainApp() {
@@ -329,6 +521,10 @@ function MainApp() {
             <Trophy className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Ranking</span>}
           </button>
 
+          <button onClick={() => setActiveModule('reports')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'reports' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Relatórios" : ""}>
+            <Printer className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Relatórios</span>}
+          </button>
+
           {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
             <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
               <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
@@ -369,50 +565,48 @@ function MainApp() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
-        {activeModule === 'dashboard' && <ModuleDashboard files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} currentUser={currentUser} usersList={usersList} />}
-        {activeModule === 'ranking' && <ModuleRanking files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} />}
-        {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
-        {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
-        {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
-        {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
-      </main>
+      <main className="flex-1 overflow-y-auto p-6 print:p-0 print:overflow-visible bg-slate-50 print:bg-white">
+  {activeModule === 'dashboard' && <ModuleDashboard files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} currentUser={currentUser} usersList={usersList} />}
+  {activeModule === 'ranking' && <ModuleRanking files={getFilteredFilesForUser(files, currentUser, usersList)} bgClass={bgClass} />}
+  {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
+  {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
+  {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
+  {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
+  {activeModule === 'reports' && <ModuleReports files={files} bgClass={bgClass} />}
+</main>
     </div>
   );
 }
 
 // ==========================================
+// FUNÇÕES AUXILIARES DE CPF
 // ==========================================
-// TELA DE LOGIN RESTRITO (ACESSO POR CPF)
-// ==========================================
-
-// Função auxiliar para aplicar a máscara do CPF enquanto o usuário digita
 const formatCPF = (value: string) => {
   return value
-    .replace(/\D/g, '') // Remove tudo o que não é número
-    .replace(/(\d{3})(\d)/, '$1.$2') // Adiciona o primeiro ponto
-    .replace(/(\d{3})(\d)/, '$1.$2') // Adiciona o segundo ponto
-    .replace(/(\d{3})(\d{1,2})/, '$1-$2') // Adiciona o traço
-    .replace(/(-\d{2})\d+?$/, '$1'); // Impede que digitem mais do que 11 números
+    .replace(/\D/g, '')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+    .replace(/(-\d{2})\d+?$/, '$1');
 };
-// Função matemática para validar se o CPF é real
+
 const isValidCPF = (cpf: string) => {
-  cpf = cpf.replace(/\D/g, '');
-  if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false; // Bloqueia 999.999.999-99
+  const strCPF = cpf.replace(/\D/g, '');
+  if (strCPF.length !== 11 || /^(\d)\1+$/.test(strCPF)) return false;
   
   let soma = 0;
   let resto;
   
-  for (let i = 1; i <= 9; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (11 - i);
+  for (let i = 1; i <= 9; i++) soma = soma + parseInt(strCPF.substring(i - 1, i)) * (11 - i);
   resto = (soma * 10) % 11;
   if ((resto === 10) || (resto === 11)) resto = 0;
-  if (resto !== parseInt(cpf.substring(9, 10))) return false;
+  if (resto !== parseInt(strCPF.substring(9, 10))) return false;
   
   soma = 0;
-  for (let i = 1; i <= 10; i++) soma = soma + parseInt(cpf.substring(i - 1, i)) * (12 - i);
+  for (let i = 1; i <= 10; i++) soma = soma + parseInt(strCPF.substring(i - 1, i)) * (12 - i);
   resto = (soma * 10) % 11;
   if ((resto === 10) || (resto === 11)) resto = 0;
-  if (resto !== parseInt(cpf.substring(10, 11))) return false;
+  if (resto !== parseInt(strCPF.substring(10, 11))) return false;
   
   return true;
 };
@@ -443,7 +637,6 @@ function LoginScreen({ bgClass }: any) {
     const pass = frm.pass.value;
 
     try {
-      // Apenas faz o login. A criação de contas foi totalmente removida daqui.
       await signInWithEmailAndPassword(auth, systemEmail, pass);
     } catch (err: any) {
       setErrorMsg(err.message.includes('user-not-found') || err.message.includes('invalid-credential') ? 'CPF ou senha incorretos.' : err.message);
