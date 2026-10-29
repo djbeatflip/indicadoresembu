@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 
 // --- IMPORTAÇÕES DO FIREBASE ---
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updatePassword, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
@@ -616,7 +616,8 @@ function MainApp() {
             <Printer className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Relatórios <span className="text-[10px] ml-2 bg-slate-800 px-2 py-0.5 rounded-full">Em breve</span></span>}
           </button>
 
-          {(currentUser.role === 'Administrador' || currentUser.role === 'Coordenador') && (
+{/* APENAS O ADMINISTRADOR PODE VER E ACESSAR A IMPORTAÇÃO */}
+{currentUser?.role === 'Administrador' && (
             <button onClick={() => setActiveModule('import')} className={`w-full flex items-center ${isSidebarOpen ? 'space-x-3 px-4' : 'justify-center'} py-3 rounded-xl transition-all font-medium text-sm ${activeModule === 'import' ? `${bgClass} text-white shadow-md` : 'text-slate-400 hover:bg-slate-800'}`} title={!isSidebarOpen ? "Importar Dados" : ""}>
               <UploadCloud className="h-5 w-5 shrink-0" />{isSidebarOpen && <span className="whitespace-nowrap">Importar Dados</span>}
             </button>
@@ -662,7 +663,7 @@ function MainApp() {
   {activeModule === 'import' && <ModuleImport files={files} setFiles={setFiles} bgClass={bgClass} />}
   {activeModule === 'users' && <ModuleUsers usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
   {activeModule === 'access' && <ModuleAccess usersList={usersList} setUsersList={setUsersList} files={files} bgClass={bgClass} />}
-  {activeModule === 'settings' && <ModuleSettings sysTheme={sysTheme} setSysTheme={setSysTheme} bgClass={bgClass} />}
+  {activeModule === 'settings' && <ModuleSettings bgClass={bgClass} currentUser={currentUser} sysTheme={sysTheme} setSysTheme={setSysTheme} />}
   {activeModule === 'reports' && <ModuleReports files={files} bgClass={bgClass} />}
 </main>
     </div>
@@ -1582,17 +1583,113 @@ function ModuleAccess({ usersList, setUsersList, files = [], bgClass }: any) {
   );
 }
 
-function ModuleSettings({ sysTheme, setSysTheme, bgClass }: any) {
-  const handleSaveTheme = async (theme: string) => { setSysTheme(theme); await setDoc(doc(db, 'settings', 'layout'), { themeColor: theme }); };
+// ==========================================
+// MÓDULO DE PERFIL E SEGURANÇA (TROCAR SENHA E TEMAS)
+// ==========================================
+function ModuleSettings({ currentUser, bgClass, sysTheme, setSysTheme }: any) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleChangePassword = async (e: any) => {
+    e.preventDefault();
+    setStatusMsg({ text: '', type: '' });
+    setIsLoading(true);
+
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+      
+      if (user && user.email) {
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+        await reauthenticateWithCredential(user, credential);
+        await updatePassword(user, newPassword);
+        
+        setStatusMsg({ text: 'Senha atualizada com sucesso!', type: 'success' });
+        setCurrentPassword('');
+        setNewPassword('');
+      }
+    } catch (error: any) {
+      setStatusMsg({ text: 'Erro: Verifique a senha atual e tente novamente.', type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Cores disponíveis para o sistema
+  const themes = [
+    { id: 'blue', color: 'bg-blue-600', name: 'Azul' },
+    { id: 'indigo', color: 'bg-indigo-600', name: 'Índigo' },
+    { id: 'purple', color: 'bg-purple-600', name: 'Roxo' },
+    { id: 'emerald', color: 'bg-emerald-600', name: 'Verde' },
+    { id: 'rose', color: 'bg-rose-600', name: 'Rosa' },
+    { id: 'slate', color: 'bg-slate-800', name: 'Escuro' }
+  ];
+
   return (
-    <div className="max-w-2xl bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className={`p-5 ${bgClass} text-white`}><h2 className="text-lg font-bold flex items-center"><Settings className="mr-2 h-5 w-5"/> Customizar Interface</h2></div>
-      <div className="p-6">
-        <h3 className="text-sm font-bold text-slate-800 mb-3">Cor Principal</h3>
-        <div className="flex space-x-3">
-          {['blue', 'emerald', 'violet', 'slate'].map(c => (<button key={c} onClick={() => handleSaveTheme(c)} className={`h-12 w-12 rounded-full border-4 transition-all ${sysTheme === c ? 'border-slate-800 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`} style={{ backgroundColor: c==='blue'?'#2563eb':c==='emerald'?'#059669':c==='violet'?'#7c3aed':'#334155' }} />))}
+    <div className="max-w-2xl mx-auto space-y-6">
+      
+      {/* SECÇÃO 1: SEGURANÇA DA CONTA */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <h2 className="text-xl font-black text-slate-800 uppercase">Meu Perfil</h2>
+        <p className="text-sm text-slate-500 mb-6">Conta conectada: <span className="font-bold text-slate-700">{currentUser?.name || 'Usuário'}</span></p>
+        
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          {statusMsg.text && (
+            <div className={`p-3 text-sm font-bold rounded ${statusMsg.type === 'error' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+              {statusMsg.text}
+            </div>
+          )}
+          
+          <input 
+            type="password" 
+            value={currentPassword} 
+            onChange={(e) => setCurrentPassword(e.target.value)} 
+            placeholder="Senha Atual" 
+            required 
+            className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-slate-500" 
+          />
+          
+          <input 
+            type="password" 
+            value={newPassword} 
+            onChange={(e) => setNewPassword(e.target.value)} 
+            placeholder="Nova Senha (mínimo 6 caracteres)" 
+            required 
+            minLength={6} 
+            className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-slate-500" 
+          />
+          
+          <button 
+            type="submit" 
+            disabled={isLoading}
+            className={`px-6 py-2.5 rounded-lg text-white font-bold transition-all ${isLoading ? 'bg-slate-400 cursor-not-allowed' : `${bgClass} hover:opacity-90`}`}
+          >
+            {isLoading ? 'A atualizar...' : 'Atualizar Senha'}
+          </button>
+        </form>
+      </div>
+
+      {/* SECÇÃO 2: APARÊNCIA DO SISTEMA */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <h2 className="text-xl font-black text-slate-800 uppercase mb-1">Aparência</h2>
+        <p className="text-sm text-slate-500 mb-6">Personalize a cor principal da sua interface</p>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {themes.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setSysTheme && setSysTheme(t.id)}
+              className={`flex items-center p-3 rounded-lg border-2 transition-all ${sysTheme === t.id ? 'border-slate-800 bg-slate-50 scale-[1.02] shadow-sm' : 'border-transparent bg-slate-100 hover:bg-slate-200'}`}
+            >
+              <div className={`w-5 h-5 rounded-full ${t.color} mr-3 shadow-inner`}></div>
+              <span className="text-sm font-bold text-slate-700">{t.name}</span>
+            </button>
+          ))}
         </div>
       </div>
+      
     </div>
   );
 }
